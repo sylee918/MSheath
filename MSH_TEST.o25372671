@@ -1,0 +1,78 @@
+Job 25372671.pbspl1.nas.nasa.gov started on Tue Nov 10 12:39:22 PST 2026
+The job requested the following resources:
+    ncpus=8
+    place=scatter:excl
+    walltime=00:10:00
+
+PBS set the following environment variables:
+        FORT_BUFFERED = 1
+                   TZ = PST8PDT
+
+On r141i5n5:
+Current directory is /nobackup/slee122/MSheath
+/home6/slee122/.profile: line 14: .bashrc: No such file or directory
+==================================================================
+Starting Quick Verification Test on Host: r141i5n5
+Queue: devel | Allocated Cores: 8
+==================================================================
+>>> Running test_hpc_pipeline.py ...
+
+--- [Test 1] Fortran Shared Library (libmsh.so) Sanity & Speed ---
+  7,381 grid points evaluated in: 45.42 ms
+  Self-contained sanity check passed (MSH points: 1,694, Solar wind: 3,727)
+
+--- [Test 2] NASA SPDF 5-min OMNI Loader & GSM<->GSE Verification ---
+  2018-01 5-min records: 8928 (Expected: 8928)
+Traceback (most recent call last):
+  File "/nobackupp28/slee122/MSheath/test_hpc_pipeline.py", line 153, in <module>
+    test_2_omni_and_coords()
+  File "/nobackupp28/slee122/MSheath/test_hpc_pipeline.py", line 98, in test_2_omni_and_coords
+    rep = verify_coordinate_transforms(sample_df=df)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nobackupp28/slee122/MSheath/coord_transform.py", line 112, in verify_coordinate_transforms
+    psi_deg, cos_a, sin_a = compute_epoch_rotations(test_uts)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nobackupp28/slee122/MSheath/coord_transform.py", line 56, in compute_epoch_rotations
+    raise RuntimeError("geopack is required for primary GSM<->GSE transformations.")
+RuntimeError: geopack is required for primary GSM<->GSE transformations.
+>>> Running quick pipeline benchmark (288 steps) ...
+==============================================================================
+[HPC GSE MSheath Pipeline] Year=2018 | Total Cores=8 | Workers/Month=8 | Concurrent Months=1 | Bin=0.5 Re
+==============================================================================
+[Stage 1] Loaded 105,120 5-min OMNI records for 2018: Observed=97,516, Interpolated(<=15m)=4,931, Missing=2,673
+Traceback (most recent call last):
+  File "/nobackupp28/slee122/MSheath/hpc_pipeline.py", line 311, in <module>
+    main()
+  File "/nobackupp28/slee122/MSheath/hpc_pipeline.py", line 297, in main
+    run_annual_pipeline(
+  File "/nobackupp28/slee122/MSheath/hpc_pipeline.py", line 165, in run_annual_pipeline
+    v_rep = verify_coordinate_transforms(sample_df=df_year)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nobackupp28/slee122/MSheath/coord_transform.py", line 112, in verify_coordinate_transforms
+    psi_deg, cos_a, sin_a = compute_epoch_rotations(test_uts)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nobackupp28/slee122/MSheath/coord_transform.py", line 56, in compute_epoch_rotations
+    raise RuntimeError("geopack is required for primary GSM<->GSE transformations.")
+RuntimeError: geopack is required for primary GSM<->GSE transformations.
+==================================================================
+Quick Test Completed Successfully at Tue Nov 10 20:39:29 UTC 2026
+Output NetCDF file check:
+ls: cannot access 'test_nc/*.nc': No such file or directory
+==================================================================
+
+____________________________________________________________________
+Job Resource Usage Summary for 25372671.pbspl1.nas.nasa.gov
+
+    CPU Time Used            : 00:00:04
+    Real Memory Used         : 1264kb
+    Walltime Used            : 00:00:04
+    Exit Status              : 0
+
+    Number of CPUs Requested : 8
+    Walltime Requested       : 00:10:00
+
+    Execution Queue          : devel
+    Charged To               : s3015
+
+    Job Stopped              : Tue Nov 10 12:39:32 2026
+____________________________________________________________________
