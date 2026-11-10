@@ -135,7 +135,7 @@ def find_monthly_files(in_dir: str, year: int) -> Dict[int, str]:
     return found
 
 
-def build_summary(in_dir: str, out_path: str, year: int = 2018) -> str:
+def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: Optional[float] = 0.1) -> str:
     t0 = time.perf_counter()
     monthly_files = find_monthly_files(in_dir, year)
     if not monthly_files:
@@ -279,7 +279,20 @@ def build_summary(in_dir: str, out_path: str, year: int = 2018) -> str:
                     vars_3d[v] = np.array(ds.variables[f"{plane}_{v}"][:], dtype=np.float32)
 
                 # Mask definitions
-                mask_all_valid = (flg_3d > 0) & np.isfinite(vars_3d["np"])
+                # flg_3d: 1=MSH, 2=SW, 0=MSP, -1=Nightside/Invalid, -2=Missing OMNI
+                # When bg_msp_density is set, fill magnetosphere (flg_3d == 0) with background value (e.g. 0.1 cm^-3)
+                if bg_msp_density is not None:
+                    is_msp = (flg_3d == 0)
+                    vars_3d["np"] = np.where(is_msp, np.float32(bg_msp_density), vars_3d["np"])
+                    vars_3d["temp_k"] = np.where(is_msp, np.float32(1.0e5), vars_3d["temp_k"]) # 0.1 MK background
+                    vars_3d["vx_gse"] = np.where(is_msp, np.float32(0.0), vars_3d["vx_gse"])
+                    vars_3d["vy_gse"] = np.where(is_msp, np.float32(0.0), vars_3d["vy_gse"])
+                    vars_3d["vz_gse"] = np.where(is_msp, np.float32(0.0), vars_3d["vz_gse"])
+                    vars_3d["vmag"] = np.where(is_msp, np.float32(0.0), vars_3d["vmag"])
+                    mask_all_valid = (flg_3d >= 0) & np.isfinite(vars_3d["np"])
+                else:
+                    mask_all_valid = (flg_3d > 0) & np.isfinite(vars_3d["np"])
+
                 mask_msh_only = (flg_3d == 1) & np.isfinite(vars_3d["np"])
 
                 # Monthly MSH-only stats and boundary means
@@ -557,10 +570,17 @@ def main():
         default=None,
         help="Output NetCDF4 summary path (default: summary_stats/MSH_GSE_<YEAR>_Summary.nc)",
     )
+    parser.add_argument(
+        "--bg-msp-np",
+        type=float,
+        default=0.1,
+        help="Background proton density [cm^-3] inside magnetopause (flg==0) (default: 0.1, set to negative to disable)",
+    )
     args = parser.parse_args()
 
+    bg_msp = args.bg_msp_np if args.bg_msp_np >= 0.0 else None
     out_path = args.out or os.path.join("summary_stats", f"MSH_GSE_{args.year:04d}_Summary.nc")
-    build_summary(in_dir=args.in_dir, out_path=out_path, year=args.year)
+    build_summary(in_dir=args.in_dir, out_path=out_path, year=args.year, bg_msp_density=bg_msp)
 
 
 if __name__ == "__main__":
