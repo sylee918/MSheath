@@ -66,18 +66,17 @@ def plot_fig1_annual_overview(ds: nc.Dataset, out_dir: str, year: int):
         rmp = np.array(ds.variables[f"annual_{plane}_rmp_mean"][:])
         msh_frac = np.array(ds.variables[f"annual_{plane}_msh_fraction"][:])
 
-        # Mask cells with < 5% MSH presence for clean MSH-only plots
-        msh_mask = msh_frac >= 0.05
-        np_map = np.where(msh_mask, np.array(ds.variables[f"annual_{plane}_np_msh_mean"][:]), np.nan)
-        vm_map = np.where(msh_mask, np.array(ds.variables[f"annual_{plane}_vmag_msh_mean"][:]), np.nan)
-        tk_map = np.where(msh_mask, np.array(ds.variables[f"annual_{plane}_temp_k_msh_mean"][:]) / 1e6, np.nan)
-        vx_map = np.where(msh_mask, np.array(ds.variables[f"annual_{plane}_vx_gse_msh_mean"][:]), np.nan)
-        vy_map = np.where(msh_mask, np.array(ds.variables[f"annual_{plane}_{v2_name}_msh_mean"][:]), np.nan)
+        # Use All-domain mean (with 0.1 cm^-3 MSP background)
+        np_map = np.array(ds.variables[f"annual_{plane}_np_mean"][:])
+        vm_map = np.array(ds.variables[f"annual_{plane}_vmag_mean"][:])
+        tk_map = np.array(ds.variables[f"annual_{plane}_temp_k_mean"][:]) / 1e6
+        vx_map = np.array(ds.variables[f"annual_{plane}_vx_gse_mean"][:])
+        vy_map = np.array(ds.variables[f"annual_{plane}_{v2_name}_mean"][:])
 
         panels = [
-            (np_map, "viridis", 0, 35, "$N_p$ [$\\mathrm{cm}^{-3}$]", "Proton Density (MSH)"),
-            (vm_map, "plasma", 50, 450, "$|V|$ [km/s]", "Flow Speed & Streamlines"),
-            (tk_map, "inferno", 0.2, 5.0, "$T_p$ [MK]", "Proton Temperature (MSH)"),
+            (np_map, "viridis", 0, 35, "$N_p$ [$\\mathrm{cm}^{-3}$]", "Proton Density"),
+            (vm_map, "plasma", 0, 450, "$|V|$ [km/s]", "Flow Speed & Streamlines"),
+            (tk_map, "inferno", 0.0, 4.5, "$T_p$ [MK]", "Proton Temperature"),
             (msh_frac * 100.0, "YlGnBu", 0, 100, "MSH Occurrence [%]", "MSH Residence Probability"),
         ]
 
@@ -121,9 +120,8 @@ def plot_fig2_dipole_tilt(ds: nc.Dataset, out_dir: str, year: int):
     X, Z = np.meshgrid(x, z, indexing="ij")
 
     reg_counts = np.array(ds.variables["regime_step_count"][:])
-    reg_np = np.array(ds.variables["regime_mer_np_msh_mean"][:])
-    reg_vm = np.array(ds.variables["regime_mer_vmag_msh_mean"][:])
-    reg_frac = np.array(ds.variables["regime_mer_msh_fraction"][:])
+    reg_np = np.array(ds.variables["regime_mer_np_mean"][:])
+    reg_vm = np.array(ds.variables["regime_mer_vmag_mean"][:])
     reg_rbs = np.array(ds.variables["regime_mer_rbs_mean"][:])
     reg_rmp = np.array(ds.variables["regime_mer_rmp_mean"][:])
 
@@ -138,13 +136,12 @@ def plot_fig2_dipole_tilt(ds: nc.Dataset, out_dir: str, year: int):
 
     for col, (r_idx, label) in enumerate(tilt_indices):
         n_steps = int(reg_counts[r_idx])
-        mask = reg_frac[r_idx] >= 0.05
-        d_np = np.where(mask, reg_np[r_idx], np.nan)
-        d_vm = np.where(mask, reg_vm[r_idx], np.nan)
+        d_np = reg_np[r_idx]
+        d_vm = reg_vm[r_idx]
 
         for row, (arr, cmap, vmin, vmax, unit_lbl, var_title) in enumerate([
             (d_np, "viridis", 0, 35, "$N_p$ [$\\mathrm{cm}^{-3}$]", "Proton Density"),
-            (d_vm, "plasma", 50, 450, "$|V|$ [km/s]", "Bulk Speed"),
+            (d_vm, "plasma", 0, 450, "$|V|$ [km/s]", "Bulk Speed"),
         ]):
             ax = axes[row, col]
             ax.set_facecolor("#e8e8e8")
@@ -173,8 +170,7 @@ def plot_fig3_imf_and_pdyn(ds: nc.Dataset, out_dir: str, year: int):
     X, Y = np.meshgrid(x, y, indexing="ij")
 
     reg_counts = np.array(ds.variables["regime_step_count"][:])
-    reg_np = np.array(ds.variables["regime_eq_np_msh_mean"][:])
-    reg_frac = np.array(ds.variables["regime_eq_msh_fraction"][:])
+    reg_np = np.array(ds.variables["regime_eq_np_mean"][:])
     reg_rbs = np.array(ds.variables["regime_eq_rbs_mean"][:])
     reg_rmp = np.array(ds.variables["regime_eq_rmp_mean"][:])
 
@@ -192,8 +188,7 @@ def plot_fig3_imf_and_pdyn(ds: nc.Dataset, out_dir: str, year: int):
         ax = axes[col]
         ax.set_facecolor("#e8e8e8")
         n_steps = int(reg_counts[r_idx])
-        mask = reg_frac[r_idx] >= 0.05
-        d_np = np.where(mask, reg_np[r_idx], np.nan)
+        d_np = reg_np[r_idx]
 
         pcm = ax.pcolormesh(X, Y, d_np, cmap="viridis", vmin=0, vmax=40, shading="auto")
         overlay_mean_boundaries(ax, x, y, reg_rbs[r_idx], reg_rmp[r_idx])
@@ -218,8 +213,7 @@ def plot_fig4_monthly_climatology(ds: nc.Dataset, out_dir: str, year: int):
     y = np.array(ds.variables["y_gse"][:])
     X, Y = np.meshgrid(x, y, indexing="ij")
 
-    m_np = np.array(ds.variables["monthly_eq_np_msh_mean"][:])
-    m_frac = np.array(ds.variables["monthly_eq_msh_fraction"][:])
+    m_np = np.array(ds.variables["monthly_eq_np_mean"][:])
     m_rbs = np.array(ds.variables["monthly_eq_rbs_mean"][:])
     m_rmp = np.array(ds.variables["monthly_eq_rmp_mean"][:])
     m_vc = np.array(ds.variables["monthly_eq_valid_count"][:])
@@ -233,8 +227,7 @@ def plot_fig4_monthly_climatology(ds: nc.Dataset, out_dir: str, year: int):
         ax = axes[idx // 4, idx % 4]
         ax.set_facecolor("#e8e8e8")
         n_valid = int(np.max(m_vc[idx]))
-        mask = m_frac[idx] >= 0.05
-        arr = np.where(mask, m_np[idx], np.nan)
+        arr = m_np[idx]
         pcm = ax.pcolormesh(X, Y, arr, cmap="viridis", vmin=0, vmax=35, shading="auto")
         overlay_mean_boundaries(ax, x, y, m_rbs[idx], m_rmp[idx])
         draw_earth(ax)

@@ -86,15 +86,10 @@ def generate_comparison_plots(summary_2018: str, summary_2025: str, out_dir: str
         for row, (plane, coord2, p_label, vname, unit_str, vmin, vmax, cmap_v, d_unit, dmin, dmax, cmap_d, scale) in enumerate(row_configs):
             X, C2 = np.meshgrid(x, coord2, indexing="ij")
 
-            # MSH fraction mask
-            f18 = np.array(ds18.variables[f"annual_{plane}_msh_fraction"][:])
-            f25 = np.array(ds25.variables[f"annual_{plane}_msh_fraction"][:])
-            msh_mask = (f18 >= 0.05) | (f25 >= 0.05)
-
-            # Data 2018 & 2025
-            d18 = np.where(f18 >= 0.05, np.array(ds18.variables[f"annual_{plane}_{vname}_msh_mean"][:]) * scale, np.nan)
-            d25 = np.where(f25 >= 0.05, np.array(ds25.variables[f"annual_{plane}_{vname}_msh_mean"][:]) * scale, np.nan)
-            diff = np.where(msh_mask, d25 - d18, np.nan)
+            # Data 2018 & 2025: Use All-domain mean (with 0.1 cm^-3 MSP background)
+            d18 = np.array(ds18.variables[f"annual_{plane}_{vname}_mean"][:]) * scale
+            d25 = np.array(ds25.variables[f"annual_{plane}_{vname}_mean"][:]) * scale
+            diff = d25 - d18
 
             rbs18 = np.array(ds18.variables[f"annual_{plane}_rbs_mean"][:])
             rmp18 = np.array(ds18.variables[f"annual_{plane}_rmp_mean"][:])
