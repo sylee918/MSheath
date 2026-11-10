@@ -24,13 +24,35 @@ Mathematical Formulation:
         Vz_GSE = -Vy_GSM * s + Vz_GSM * c
 """
 
+import os
+import shutil
 from typing import Tuple, Dict, Any
 import numpy as np
+
+def _ensure_geopack_coeffs():
+    """Ensure geopack has required IGRF coefficient files even on offline compute nodes."""
+    try:
+        import geopack
+        gp_dir = os.path.dirname(geopack.__file__)
+        target_dir = os.path.join(gp_dir, 'igrf_coeffs')
+        os.makedirs(target_dir, exist_ok=True)
+        # Check if any coefficient files already exist
+        has_coeffs = any(f.startswith('igrf') and f.endswith('.txt') for f in os.listdir(target_dir))
+        if not has_coeffs:
+            repo_coeff_dir = os.path.join(os.path.dirname(__file__), 'assets', 'igrf_coeffs')
+            if os.path.exists(repo_coeff_dir):
+                for f in os.listdir(repo_coeff_dir):
+                    if f.endswith('.txt'):
+                        shutil.copy(os.path.join(repo_coeff_dir, f), os.path.join(target_dir, f))
+    except Exception:
+        pass
+
+_ensure_geopack_coeffs()
 
 try:
     from geopack import geopack as _gp
     HAS_GEOPACK = True
-except ImportError:
+except (ImportError, Exception):
     HAS_GEOPACK = False
 
 

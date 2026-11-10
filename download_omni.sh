@@ -33,3 +33,7 @@ else
 fi
 
 echo "[download_omni] Successfully downloaded Year=${YEAR} ($(du -h "${DEST_FILE}" | cut -f1))"
+
+# Pre-initialize geopack IGRF coefficients while on login node (with internet access)
+echo "[download_omni] Pre-initializing geopack IGRF coefficients..."
+python3 -c "import geopack.geopack" 2>/dev/null || true
