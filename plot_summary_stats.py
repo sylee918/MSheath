@@ -355,20 +355,30 @@ def main():
         help="Path to summary NetCDF file (default: summary_stats/MSH_GSE_2018_Summary.nc)",
     )
     parser.add_argument("--out-dir", type=str, default="figures", help="Directory to save generated plots")
-    parser.add_argument("--year", type=int, default=2018, help="Target year")
+    parser.add_argument("--year", type=int, default=None, help="Target year (if omitted, auto-detected from filename or metadata)")
     args = parser.parse_args()
 
     if not os.path.isfile(args.summary):
         raise FileNotFoundError(f"Summary file not found: {args.summary}")
 
+    # Auto-detect year if not explicitly passed
+    year = args.year
+    if year is None:
+        import re
+        m = re.search(r"(\d{4})", os.path.basename(args.summary))
+        if m:
+            year = int(m.group(1))
+        else:
+            year = 2018
+
     os.makedirs(args.out_dir, exist_ok=True)
-    print(f"[Plotter] Reading summary file: {args.summary}")
+    print(f"[Plotter] Reading summary file: {args.summary} (Year={year})")
     with nc.Dataset(args.summary, "r") as ds:
-        plot_fig1_annual_overview(ds, args.out_dir, args.year)
-        plot_fig2_dipole_tilt(ds, args.out_dir, args.year)
-        plot_fig3_imf_and_pdyn(ds, args.out_dir, args.year)
-        plot_fig4_monthly_climatology(ds, args.out_dir, args.year)
-        plot_fig5_subsolar_timeseries(ds, args.out_dir, args.year)
+        plot_fig1_annual_overview(ds, args.out_dir, year)
+        plot_fig2_dipole_tilt(ds, args.out_dir, year)
+        plot_fig3_imf_and_pdyn(ds, args.out_dir, year)
+        plot_fig4_monthly_climatology(ds, args.out_dir, year)
+        plot_fig5_subsolar_timeseries(ds, args.out_dir, year)
     print("[Plotter] All 5 figures generated successfully!")
 
 
