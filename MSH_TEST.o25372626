@@ -1,0 +1,49 @@
+Job 25372626.pbspl1.nas.nasa.gov started on Tue Nov 10 12:11:40 PST 2026
+The job requested the following resources:
+    ncpus=8
+    place=scatter:excl
+    walltime=00:10:00
+
+PBS set the following environment variables:
+        FORT_BUFFERED = 1
+                   TZ = PST8PDT
+
+On r147i3n2:
+Current directory is /nobackup/slee122/MSheath
+/home6/slee122/.profile: line 14: .bashrc: No such file or directory
+==================================================================
+Starting Quick Verification Test on Host: r147i3n2
+Queue: devel | Allocated Cores: 8
+==================================================================
+>>> Running test_hpc_pipeline.py ...
+Traceback (most recent call last):
+  File "test_hpc_pipeline.py", line 8, in <module>
+    import numpy as np
+ModuleNotFoundError: No module named 'numpy'
+>>> Running quick pipeline benchmark (288 steps) ...
+Traceback (most recent call last):
+  File "hpc_pipeline.py", line 21, in <module>
+    import numpy as np
+ModuleNotFoundError: No module named 'numpy'
+==================================================================
+Quick Test Completed Successfully at Tue Nov 10 20:11:47 UTC 2026
+Output NetCDF file check:
+ls: cannot access 'test_nc/*.nc': No such file or directory
+==================================================================
+
+____________________________________________________________________
+Job Resource Usage Summary for 25372626.pbspl1.nas.nasa.gov
+
+    CPU Time Used            : 00:00:02
+    Real Memory Used         : 1292kb
+    Walltime Used            : 00:00:03
+    Exit Status              : 0
+
+    Number of CPUs Requested : 8
+    Walltime Requested       : 00:10:00
+
+    Execution Queue          : devel
+    Charged To               : s3015
+
+    Job Stopped              : Tue Nov 10 12:11:50 2026
+____________________________________________________________________

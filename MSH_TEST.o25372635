@@ -1,0 +1,122 @@
+Job 25372635.pbspl1.nas.nasa.gov started on Tue Nov 10 12:16:48 PST 2026
+The job requested the following resources:
+    ncpus=8
+    place=scatter:excl
+    walltime=00:10:00
+
+PBS set the following environment variables:
+        FORT_BUFFERED = 1
+                   TZ = PST8PDT
+
+On r147i3n2:
+Current directory is /nobackup/slee122/MSheath
+/home6/slee122/.profile: line 14: .bashrc: No such file or directory
+==================================================================
+Starting Quick Verification Test on Host: r147i3n2
+Queue: devel | Allocated Cores: 8
+==================================================================
+>>> Running test_hpc_pipeline.py ...
+
+--- [Test 1] Fortran Shared Library (libmsh.so) Consistency & Speed ---
+Traceback (most recent call last):
+  File "/nobackupp28/slee122/MSheath/test_hpc_pipeline.py", line 124, in <module>
+    test_1_fortran_lib_consistency()
+  File "/nobackupp28/slee122/MSheath/test_hpc_pipeline.py", line 21, in test_1_fortran_lib_consistency
+    d = np.genfromtxt("omni_20180101_equatorial.dat", names=True)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/site-packages/numpy/lib/npyio.py", line 1980, in genfromtxt
+    fid = np.lib._datasource.open(fname, 'rt', encoding=encoding)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/site-packages/numpy/lib/_datasource.py", line 193, in open
+    return ds.open(path, mode, encoding=encoding, newline=newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/site-packages/numpy/lib/_datasource.py", line 533, in open
+    raise FileNotFoundError(f"{path} not found.")
+FileNotFoundError: omni_20180101_equatorial.dat not found.
+>>> Running quick pipeline benchmark (288 steps) ...
+==============================================================================
+[HPC GSE MSheath Pipeline] Year=2018 | Total Cores=8 | Workers/Month=8 | Concurrent Months=1 | Bin=0.5 Re
+==============================================================================
+[omni_loader] Downloading https://spdf.gsfc.nasa.gov/pub/data/omni/high_res_omni/omni_5min2018.asc -> data/omni_5min/omni_5min2018.asc ...
+Traceback (most recent call last):
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/urllib/request.py", line 1348, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/http/client.py", line 1286, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/http/client.py", line 1332, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/http/client.py", line 1281, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/http/client.py", line 1041, in _send_output
+    self.send(msg)
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/http/client.py", line 979, in send
+    self.connect()
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/http/client.py", line 1451, in connect
+    super().connect()
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/http/client.py", line 945, in connect
+    self.sock = self._create_connection(
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/socket.py", line 851, in create_connection
+    raise exceptions[0]
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/socket.py", line 836, in create_connection
+    sock.connect(sa)
+OSError: [Errno 99] Cannot assign requested address
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/nobackupp28/slee122/MSheath/hpc_pipeline.py", line 306, in <module>
+    main()
+  File "/nobackupp28/slee122/MSheath/hpc_pipeline.py", line 292, in main
+    run_annual_pipeline(
+  File "/nobackupp28/slee122/MSheath/hpc_pipeline.py", line 153, in run_annual_pipeline
+    df_year = load_and_preprocess_omni(year=year, filepath=omni_file)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nobackupp28/slee122/MSheath/omni_loader.py", line 73, in load_and_preprocess_omni
+    filepath = download_omni_5min(year, cache_dir=cache_dir)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nobackupp28/slee122/MSheath/omni_loader.py", line 51, in download_omni_5min
+    urllib.request.urlretrieve(url, local_path)
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/urllib/request.py", line 241, in urlretrieve
+    with contextlib.closing(urlopen(url, data)) as fp:
+                            ^^^^^^^^^^^^^^^^^^
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/urllib/request.py", line 216, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/urllib/request.py", line 519, in open
+    response = self._open(req, data)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/urllib/request.py", line 536, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/urllib/request.py", line 496, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/urllib/request.py", line 1391, in https_open
+    return self.do_open(http.client.HTTPSConnection, req,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nasa/pkgsrc/toss4/2023Q3/lib/python3.11/urllib/request.py", line 1351, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno 99] Cannot assign requested address>
+==================================================================
+Quick Test Completed Successfully at Tue Nov 10 20:16:56 UTC 2026
+Output NetCDF file check:
+ls: cannot access 'test_nc/*.nc': No such file or directory
+==================================================================
+
+____________________________________________________________________
+Job Resource Usage Summary for 25372635.pbspl1.nas.nasa.gov
+
+    CPU Time Used            : 00:00:03
+    Real Memory Used         : 1252kb
+    Walltime Used            : 00:00:06
+    Exit Status              : 0
+
+    Number of CPUs Requested : 8
+    Walltime Requested       : 00:10:00
+
+    Execution Queue          : devel
+    Charged To               : s3015
+
+    Job Stopped              : Tue Nov 10 12:16:59 2026
+____________________________________________________________________

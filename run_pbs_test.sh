@@ -11,7 +11,7 @@
 ulimit -s unlimited
 
 module load comp-intel
-module load pkgsrc
+module load pkgsrc python3
 
 cd "$PBS_O_WORKDIR"
 mkdir -p logs test_nc data/omni_5min
