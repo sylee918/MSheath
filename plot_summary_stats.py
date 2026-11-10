@@ -213,21 +213,35 @@ def plot_fig4_monthly_climatology(ds: nc.Dataset, out_dir: str, year: int):
     y = np.array(ds.variables["y_gse"][:])
     X, Y = np.meshgrid(x, y, indexing="ij")
 
-    m_np = np.array(ds.variables["monthly_eq_np_mean"][:])
+    m_np_raw = np.array(ds.variables["monthly_eq_np_mean"][:])
     m_rbs = np.array(ds.variables["monthly_eq_rbs_mean"][:])
     m_rmp = np.array(ds.variables["monthly_eq_rmp_mean"][:])
     m_vc = np.array(ds.variables["monthly_eq_valid_count"][:])
 
     month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     fig, axes = plt.subplots(3, 4, figsize=(18, 13.5), constrained_layout=True)
-    fig.suptitle(f"Monthly GSE Equatorial Magnetosheath Proton Density Climatology — {year}", fontsize=15, fontweight="bold")
+    fig.suptitle(f"Monthly GSE Equatorial Magnetosheath Proton Density Climatology — {year}\n(Adjusted with 0.1 cm^-3 Magnetosphere Background)", fontsize=15, fontweight="bold")
 
     pcm = None
     for idx in range(12):
         ax = axes[idx // 4, idx % 4]
         ax.set_facecolor("#e8e8e8")
-        n_valid = int(np.max(m_vc[idx]))
-        arr = m_np[idx]
+        val_cnt = m_vc[idx]
+        tot_valid_month = int(np.max(val_cnt))
+
+        # Adjust monthly cell mean with 0.1 cm^-3 magnetosphere background
+        # where valid_cnt < tot_valid_month
+        if tot_valid_month > 0:
+            raw_arr = m_np_raw[idx]
+            clean_raw = np.where(np.isfinite(raw_arr), raw_arr, 0.1)
+            arr = np.where(
+                val_cnt > 0,
+                (clean_raw * val_cnt + (tot_valid_month - val_cnt) * 0.1) / tot_valid_month,
+                0.1
+            )
+        else:
+            arr = m_np_raw[idx]
+
         pcm = ax.pcolormesh(X, Y, arr, cmap="viridis", vmin=0, vmax=35, shading="auto")
         overlay_mean_boundaries(ax, x, y, m_rbs[idx], m_rmp[idx])
         draw_earth(ax)
@@ -235,14 +249,14 @@ def plot_fig4_monthly_climatology(ds: nc.Dataset, out_dir: str, year: int):
         ax.set_ylim(-25, 25)
         ax.set_aspect("equal")
         ax.grid(True, ls=":", alpha=0.35, color="black")
-        ax.set_title(f"{year}-{idx+1:02d} ({month_names[idx]}) | Valid={n_valid:,}", fontsize=10.5)
+        ax.set_title(f"{year}-{idx+1:02d} ({month_names[idx]}) | Valid={tot_valid_month:,}", fontsize=10.5)
         if idx // 4 == 2:
             ax.set_xlabel("$X_{\\mathrm{GSE}}$ [$R_E$]")
         if idx % 4 == 0:
             ax.set_ylabel("$Y_{\\mathrm{GSE}}$ [$R_E$]")
 
     if pcm is not None:
-        fig.colorbar(pcm, ax=axes.ravel().tolist(), shrink=0.6, pad=0.015, label="Mean MSH $N_p$ [$\\mathrm{cm}^{-3}$]")
+        fig.colorbar(pcm, ax=axes.ravel().tolist(), shrink=0.6, pad=0.015, label="Adjusted Mean $N_p$ [$\\mathrm{cm}^{-3}$]")
 
     out_path = os.path.join(out_dir, f"fig4_{year}_monthly_np_climatology.png")
     fig.savefig(out_path, dpi=220)
