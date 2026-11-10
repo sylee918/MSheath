@@ -150,11 +150,16 @@ def run_annual_pipeline(
     print("=" * 78)
 
     # Step 1: Load and preprocess 5-minute OMNI data
-    df_year = load_and_preprocess_omni(year=year, filepath=omni_file)
-    print(f"[Stage 1] Loaded {len(df_year):,} 5-min OMNI records for {year}: "
-          f"Observed={(df_year['quality_flag']==2).sum():,}, "
-          f"Interpolated(<=15m)={(df_year['quality_flag']==1).sum():,}, "
-          f"Missing={(df_year['quality_flag']==0).sum():,}")
+    if omni_file == "SYNTHETIC":
+        from omni_loader import generate_synthetic_omni
+        df_year = generate_synthetic_omni(year=year, n_days=3)
+        print(f"[Stage 1] Generated {len(df_year):,} synthetic 5-min OMNI test records for offline verification")
+    else:
+        df_year = load_and_preprocess_omni(year=year, filepath=omni_file)
+        print(f"[Stage 1] Loaded {len(df_year):,} 5-min OMNI records for {year}: "
+              f"Observed={(df_year['quality_flag']==2).sum():,}, "
+              f"Interpolated(<=15m)={(df_year['quality_flag']==1).sum():,}, "
+              f"Missing={(df_year['quality_flag']==0).sum():,}")
 
     # Step 2: Verify GSM <-> GSE coordinate transformations
     v_rep = verify_coordinate_transforms(sample_df=df_year)

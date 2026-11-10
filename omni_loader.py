@@ -48,9 +48,61 @@ def download_omni_5min(year: int, cache_dir: str = "data/omni_5min") -> str:
 
     url = SPDF_5MIN_URL_TEMPLATE.format(year=year)
     print(f"[omni_loader] Downloading {url} -> {local_path} ...")
-    urllib.request.urlretrieve(url, local_path)
-    print(f"[omni_loader] Download complete ({os.path.getsize(local_path) / (1024*1024):.2f} MB)")
-    return local_path
+    try:
+        urllib.request.urlretrieve(url, local_path)
+        print(f"[omni_loader] Download complete ({os.path.getsize(local_path) / (1024*1024):.2f} MB)")
+        return local_path
+    except Exception as err:
+        raise RuntimeError(
+            f"\n[omni_loader] Failed to download {url} from compute node ({err}).\n"
+            f"Supercomputer compute nodes usually do NOT have outbound internet access.\n"
+            f"Please download OMNI data on the login/frontend node first by running:\n"
+            f"  bash download_omni.sh {year}\n"
+            f"Or specify an existing local file via --omni-file /path/to/omni_5min{year}.asc"
+        ) from err
+
+
+def generate_synthetic_omni(year: int = 2018, n_days: int = 3) -> pd.DataFrame:
+    """
+    Generate synthetic 5-minute OMNI dataframe for offline test/verification
+    without requiring internet access or large data downloads on HPC compute nodes.
+    """
+    n_steps = n_days * 24 * 12
+    timestamps = pd.date_range(f"{year}-01-01T00:00:00Z", periods=n_steps, freq="5min")
+    rng = np.random.default_rng(2018)
+
+    vsw = 370.0 + 20.0 * np.sin(np.linspace(0, 10, n_steps))
+    np_dens = 10.0 + 2.0 * np.cos(np.linspace(0, 8, n_steps))
+    temp_k = 75000.0 + 10000.0 * np.sin(np.linspace(0, 5, n_steps))
+    bx = 2.0 * np.sin(np.linspace(0, 12, n_steps))
+    by = -4.0 + 1.0 * np.cos(np.linspace(0, 7, n_steps))
+    bz = -3.0 + 2.0 * np.sin(np.linspace(0, 9, n_steps))
+
+    df = pd.DataFrame({
+        "year": timestamps.year,
+        "doy": timestamps.dayofyear,
+        "hour": timestamps.hour,
+        "minute": timestamps.minute,
+        "timestamp": timestamps,
+        "unix_time": timestamps.astype("int64") // 10**9,
+        "month": timestamps.month,
+        "b_mag": np.sqrt(bx**2 + by**2 + bz**2),
+        "bx_gsm": bx,
+        "by_gse": by,
+        "bz_gse": bz,
+        "by_gsm": by,
+        "bz_gsm": bz,
+        "vsw": vsw,
+        "vx_gse": -vsw,
+        "vy_gse": np.zeros(n_steps),
+        "vz_gse": np.zeros(n_steps),
+        "np": np_dens,
+        "temp_k": temp_k,
+        "pdyn": 1.937e-6 * np_dens * (vsw**2),
+        "quality_flag": np.full(n_steps, 2, dtype=np.int8),
+        "wsw_ev": temp_k / 11604.525,
+    })
+    return df
 
 
 def load_and_preprocess_omni(

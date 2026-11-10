@@ -40,6 +40,13 @@ python3 test_hpc_pipeline.py
 
 # Test 2: Quick pipeline run for 1 month, capped at 288 steps (1 day)
 echo ">>> Running quick pipeline benchmark (288 steps) ..."
+LOCAL_OMNI="data/omni_5min/omni_5min2018.asc"
+if [ -f "${LOCAL_OMNI}" ]; then
+    OMNI_ARG="--omni-file ${LOCAL_OMNI}"
+else
+    OMNI_ARG="--omni-file SYNTHETIC"
+fi
+
 python3 hpc_pipeline.py \
     --year 2018 \
     --months 1 \
@@ -48,7 +55,8 @@ python3 hpc_pipeline.py \
     --concurrent-months 1 \
     --max-steps 288 \
     --dx 0.5 \
-    --out-dir "test_nc"
+    --out-dir "test_nc" \
+    ${OMNI_ARG}
 
 echo "=================================================================="
 echo "Quick Test Completed Successfully at $(date -u)"

@@ -42,6 +42,17 @@ fi
 TARGET_YEAR="${TARGET_YEAR:-2018}"
 TOTAL_CORES=40
 
+OMNI_LOCAL_PATH="data/omni_5min/omni_5min${TARGET_YEAR}.asc"
+if [ ! -f "${OMNI_LOCAL_PATH}" ]; then
+    echo "=================================================================="
+    echo "[ERROR] OMNI 5-min data file not found: ${OMNI_LOCAL_PATH}"
+    echo "Pleiades compute nodes cannot download files from external internet."
+    echo "Please download the data on the login node (pfe) first by running:"
+    echo "   bash download_omni.sh ${TARGET_YEAR}"
+    echo "=================================================================="
+    exit 1
+fi
+
 echo "=================================================================="
 echo "Job ID: ${PBS_JOBID}"
 echo "Running on Host: $(hostname)"
