@@ -108,8 +108,8 @@ def generate_comparison_plots(summary_2018: str, summary_2025: str, out_dir: str
             overlay_boundaries(ax0, x, coord2, rbs18, rmp18, color_bs="#00ffff", color_mp="#ff00ff")
             draw_earth(ax0)
             if plane == "mer":
-                ax0.axvspan(x[0], 0, color="#c0c0c0", alpha=0.5, zorder=2)
-            ax0.set_xlim(10, -18)
+                ax0.axvspan(-10, 0, color="#c0c0c0", alpha=0.5, zorder=2)
+            ax0.set_xlim(-10, 20)
             ax0.set_ylim(-24, 24)
             ax0.set_aspect("equal")
             ax0.grid(True, ls=":", alpha=0.4, color="black")
@@ -124,8 +124,8 @@ def generate_comparison_plots(summary_2018: str, summary_2025: str, out_dir: str
             overlay_boundaries(ax1, x, coord2, rbs25, rmp25, color_bs="#00ffff", color_mp="#ff00ff")
             draw_earth(ax1)
             if plane == "mer":
-                ax1.axvspan(x[0], 0, color="#c0c0c0", alpha=0.5, zorder=2)
-            ax1.set_xlim(10, -18)
+                ax1.axvspan(-10, 0, color="#c0c0c0", alpha=0.5, zorder=2)
+            ax1.set_xlim(-10, 20)
             ax1.set_ylim(-24, 24)
             ax1.set_aspect("equal")
             ax1.grid(True, ls=":", alpha=0.4, color="black")
@@ -141,8 +141,8 @@ def generate_comparison_plots(summary_2018: str, summary_2025: str, out_dir: str
             overlay_boundaries(ax2, x, coord2, rbs25, rmp25, color_bs="#0066cc", color_mp="#990099")
             draw_earth(ax2)
             if plane == "mer":
-                ax2.axvspan(x[0], 0, color="#c0c0c0", alpha=0.5, zorder=2)
-            ax2.set_xlim(10, -18)
+                ax2.axvspan(-10, 0, color="#c0c0c0", alpha=0.5, zorder=2)
+            ax2.set_xlim(-10, 20)
             ax2.set_ylim(-24, 24)
             ax2.set_aspect("equal")
             ax2.grid(True, ls=":", alpha=0.4, color="black")
@@ -151,7 +151,7 @@ def generate_comparison_plots(summary_2018: str, summary_2025: str, out_dir: str
 
             if row == 3:
                 for c in range(3):
-                    axes[row, c].set_xlabel("$X_{\\mathrm{GSE}}$ [$R_E$] (Sun $\\leftarrow$)")
+                    axes[row, c].set_xlabel("$X_{\\mathrm{GSE}}$ [$R_E$]")
 
         out_f8 = os.path.join(out_dir, "fig8_compare_2018_vs_2025_2D_maps.png")
         fig.savefig(out_f8, dpi=200)
