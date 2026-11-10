@@ -15,10 +15,13 @@ run_orig_den
 
 # Heavy data & output files
 output_nc/
+test_nc/
 data/omni_5min/
 *.dat
 *.asc
 *.nc
+!summary_stats/
+!summary_stats/*.nc
 *.h5
 
 # Image outputs (keep codebase light)
