@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C / Fortran binaries & shared objects
+*.so
+*.o
+*.mod
+*.exe
+msh_calc_grid
+msh_calc_grid_O0
+msh_dbg
+run_orig_den
+
+# Heavy data & output files
+output_nc/
+data/omni_5min/
+*.dat
+*.asc
+*.nc
+*.h5
+
+# Image outputs (keep codebase light)
+*.png
+*.jpg
+*.jpeg
+*.svg
+
+# Logs
+*.log
+logs/
+
+# Environments / local settings
+.venv/
+venv/
+ENV/
+.idea/
+.vscode/

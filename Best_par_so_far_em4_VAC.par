@@ -1,0 +1,14 @@
+   0.999969         main  (free)  term in magnetospheric part                  
+   0.108748E-01     BZIMF-related term in magnetospheric part                  
+  -0.119658         PDyn-related term in magnetospheric part                   
+  -0.208454E-01     PDyn times BzIMF  term in magnetospheric part              
+    1.10687         Avg standoff distance divided by 10                        
+   0.156313         EPS exponent for Pdyn dependence of MP standoff distance   
+  -0.816616E-01     DFSC coefficient by BZIMF/10 in standoff scaling factor    
+   0.485757         ALP0: free term in MP flaring parameter                    
+   0.221249         ALP1: coeff by exp(-BzIMF/10) in MP flaring parameter      
+
+     B_rms=    42.1121      (weighted)
+     Q=    14.3649      (weighted)
+     NPOINTS for this fitting=         693739
+ Q/rms(B)=34.111%;   RX=0.8350 RY=0.9010 RZ=0.9289

@@ -1,0 +1,37 @@
+FORMAT OF THE SUBSETTED TRAINING/VALIDATION FILES
+    
+##   ITEMS                         FORMAT   
+     
+ 1   Year                                       I4
+ 2   Day Of Year (Jan 1 = DOY 1)                I4
+ 3   Hour of Day (0-23)                         I3
+ 4   Minute of Hour (0-59)                      I3
+ 5   S/C XGSM position (in Re=6371.2km)         F10.5
+ 6   S/C YGSM position                          F10.5
+ 7   S/C ZGSM position                          F10.5
+ 8   observed BXGSM (nT)                        F8.1
+ 9   observed BYGSM (nT)                        F8.1
+10   observed BZGSM (nT)                        F8.1
+11   observed proton density (cm^-3)            F6.2
+12   observed proton energy (eV)                F7.1
+13   bulk plasma VXGSE (km/s)                   F8.1    
+14   bulk plasma VYGSE (km/s)                   F8.1    
+15   bulk plasma VZGSE (km/s)                   F8.1    
+16   IMF BXGSM (nT)                             F8.2
+17   IMF BYGSM (nT)                             F8.2
+18   IMF BZGSM (nT)                             F8.2
+19   Solar wind VXGSE (km/s)                    F8.1    
+20   Solar wind VYGSE (km/s; 4-deg aberrated)   F8.1    
+21   Solar wind VZGSE (km/s)                    F8.1    
+22   Solar wind proton density (cm^-3)          F7.2    
+23   Solar wind ram pressure (nPa)              F6.2    
+24   Solar wind proton energy (eV)              F7.1    
+25   Solar wind Mach Alfven number              F6.1    
+26   Solar wind magnetosonic Mach number        F5.1    
+27   Spacecraft ID                              A3      
+28   Record association (either MSH or MSP)     A4  
+     such that ' MSH' or ' MSP' stand for magnetosheath or magnetosphere, resp.
+
+FORMAT STATEMENT: 
+
+FORMAT(2I4,2I3,2x,3f10.5,3f8.1,2x,f6.2,f7.1,3f8.1,2x,3f8.2,3F8.1,f7.2,f7.1,f6.2,f6.1,f5.1,2X,A3,A4)
