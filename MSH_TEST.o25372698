@@ -1,0 +1,85 @@
+Job 25372698.pbspl1.nas.nasa.gov started on Tue Nov 10 12:50:22 PST 2026
+The job requested the following resources:
+    ncpus=8
+    place=scatter:excl
+    walltime=00:10:00
+
+PBS set the following environment variables:
+        FORT_BUFFERED = 1
+                   TZ = PST8PDT
+
+On r137i6n33:
+Current directory is /nobackup/slee122/MSheath
+/home6/slee122/.profile: line 14: .bashrc: No such file or directory
+==================================================================
+Starting Quick Verification Test on Host: r137i6n33
+Queue: devel | Allocated Cores: 8
+==================================================================
+>>> Running test_hpc_pipeline.py ...
+Load IGRF coefficients ...
+Failed to get the list of IGRF coefficients.
+
+--- [Test 1] Fortran Shared Library (libmsh.so) Sanity & Speed ---
+  7,381 grid points evaluated in: 44.34 ms
+  Self-contained sanity check passed (MSH points: 1,694, Solar wind: 3,727)
+
+--- [Test 2] NASA SPDF 5-min OMNI Loader & GSM<->GSE Verification ---
+  2018-01 5-min records: 8928 (Expected: 8928)
+  passed: True
+  max_orthogonality_error: 2.220446049250313e-16
+  max_roundtrip_error_Re: 1.0658141036401503e-14
+  max_norm_error_kms: 7.105427357601002e-15
+  omni_b_field_rms_diff_nT: 0.01531285063609313
+
+--- [Test 3] End-to-End Multi-Worker Pipeline & NetCDF4 Verification ---
+==============================================================================
+[HPC GSE MSheath Pipeline] Year=2018 | Total Cores=8 | Workers/Month=8 | Concurrent Months=1 | Bin=0.5 Re
+==============================================================================
+[Stage 1] Loaded 105,120 5-min OMNI records for 2018: Observed=97,516, Interpolated(<=15m)=4,931, Missing=2,673
+[Stage 2] Coordinate Transform Verification: passed=True | det_err=2.22e-16 | roundtrip_err=1.07e-14 Re | OMNI B-field RMS diff=0.0153 nT
+  -> [Month 2018-01] Steps=241/288 | Time=4.78s | Output=test_nc/MSH_GSE_2018-01.nc (27.80 MB)
+==============================================================================
+[HPC Pipeline Complete] Processed 1 month(s) in 5.40 s.
+==============================================================================
+  NetCDF4 file verified: test_nc/MSH_GSE_2018-01.nc
+  Coordinate system attr: GSE (Geocentric Solar Ecliptic)
+  Dimensions: {k: len(v) for k, v in ds.dimensions.items()} -> {'time': 288, 'x_gse': 61, 'y_gse': 121, 'z_gse': 121}
+  Meridional X_GSE < 0 skip/mask verified (all 20 X<0 slices are NaN & flag=-1)
+  Equatorial peak monthly mean Np: 90.57 cm^-3, median Np: 90.57 cm^-3, max valid count: 241
+  Throughput (12 workers): 60.2 steps/sec -> Projected 1-year (105,120 steps) on 40 cores: ~8.7 minutes!
+
+ALL VERIFICATION TESTS PASSED SUCCESSFULLY!
+>>> Running quick pipeline benchmark (288 steps) ...
+Load IGRF coefficients ...
+Failed to get the list of IGRF coefficients.
+==============================================================================
+[HPC GSE MSheath Pipeline] Year=2018 | Total Cores=8 | Workers/Month=8 | Concurrent Months=1 | Bin=0.5 Re
+==============================================================================
+[Stage 1] Loaded 105,120 5-min OMNI records for 2018: Observed=97,516, Interpolated(<=15m)=4,931, Missing=2,673
+[Stage 2] Coordinate Transform Verification: passed=True | det_err=2.22e-16 | roundtrip_err=1.07e-14 Re | OMNI B-field RMS diff=0.0153 nT
+  -> [Month 2018-01] Steps=241/288 | Time=4.97s | Output=test_nc/MSH_GSE_2018-01.nc (27.80 MB)
+==============================================================================
+[HPC Pipeline Complete] Processed 1 month(s) in 5.64 s.
+==============================================================================
+==================================================================
+Quick Test Completed Successfully at Tue Nov 10 20:50:48 UTC 2026
+Output NetCDF file check:
+-rw------- 1 slee122 s3015 28M Nov 10 12:50 test_nc/MSH_GSE_2018-01.nc
+==================================================================
+
+____________________________________________________________________
+Job Resource Usage Summary for 25372698.pbspl1.nas.nasa.gov
+
+    CPU Time Used            : 00:00:38
+    Real Memory Used         : 1487364kb
+    Walltime Used            : 00:00:22
+    Exit Status              : 0
+
+    Number of CPUs Requested : 8
+    Walltime Requested       : 00:10:00
+
+    Execution Queue          : devel
+    Charged To               : s3015
+
+    Job Stopped              : Tue Nov 10 12:50:51 2026
+____________________________________________________________________
