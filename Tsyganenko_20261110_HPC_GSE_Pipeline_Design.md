@@ -20,7 +20,7 @@ date: 2026-11-10
 | `coord_transform.py` | • `geopack.recalc(ut)` 및 `geopack.gsmgse` 기반 시간별 쌍극자 기울기 $\Psi(t)$ 및 $\mathrm{GSE} \leftrightarrow \mathrm{GSM}$ 회전 행렬 성분 $(\cos\alpha, \sin\alpha)$ 계산<br>• 직교성, 가역성(Round-trip), 속력 불변성, OMNI 공식 자기장 성분 교차 검증(`verify_coordinate_transforms`) |
 | `grid_engine.py` | • **적도면($Z_{\mathrm{GSE}}=0$)**: $X_{\mathrm{GSE}} \in [-10, 20]\ R_E$, $Y_{\mathrm{GSE}} \in [-30, 30]\ R_E$ ($\Delta=0.5\ R_E$, $61 \times 121 = 7,381$ 셀)<br>• **자오면($Y_{\mathrm{GSE}}=0$)**: **$X_{\mathrm{GSE}} < 0$ 구간 계산 자체를 스킵**하고 $X_{\mathrm{GSE}} \in [0, 20]\ R_E$, $Z_{\mathrm{GSE}} \in [-30, 30]\ R_E$ ($41 \times 121 = 4,961$ 셀)만 계산 후 `NaN` 및 `flag = -1` 마스킹<br>• 월별 각 그리드 셀의 **평균(`mean`), 중앙값(`median`), 표준편차(`std`), 유효 카운트(`valid_count`), 시스 체류 카운트(`msh_count`)** 산출 |
 | `nc_writer.py` | • 월별 `output_nc/MSH_GSE_YYYY-MM.nc` 생성 (`NETCDF4`, `zlib=True, complevel=4`, `float32`)<br>• 5분 간격 3D 시계열 배열 `(time, x_gse, y_gse/z_gse)` + 월간 2D 대표 통계 배열 동시 저장 |
-| `hpc_pipeline.py` & `run_slurm.sh` | • 40코어 ProcessPool 오케스트레이터 (월별 청크 분할 + 월당 3~4 워커 할당 + 월별 저장 직후 `gc.collect()` 메모리 해제)<br>• Intel Skylake 40-core 단일 노드용 Slurm 배치 스크립트 |
+| `hpc_pipeline.py` & `run_pbs.sh` | • 40코어 ProcessPool 오케스트레이터 (월별 청크 분할 + 월당 3~4 워커 할당 + 월별 저장 직후 `gc.collect()` 메모리 해제)<br>• NASA NAS/Pleiades (PBS Pro, `model=sky_ele`, `s3015`) 슈퍼컴퓨터용 배치 스크립트 |
 
 ---
 
@@ -54,17 +54,21 @@ date: 2026-11-10
   - 12 워커 기준 처리량: **`48.0 steps/sec`** (24시간 288 스텝 처리 및 NetCDF4 압축 저장에 `6.00초` 소요)
   - **40코어 Skylake 노드에서 1년치 ($105,120$ 스텝) 전체 예상 소요 시간**: **약 11분**
 
-### 4.2 CLI 및 Slurm 실행 명령어
+### 4.2 CLI 및 PBS 슈퍼컴퓨터 실행 명령어
 ```bash
-# 1. 공유 라이브러리 빌드 (최초 1회)
-gfortran -O1 -fPIC -shared -ffixed-line-length-none msh_core_lib.for -o libmsh.so
+# 1. 공유 라이브러리 빌드 (최초 1회, Intel ifort 또는 GNU gfortran)
+ifort -O2 -fPIC -shared -extend-source 132 msh_core_lib.for -o libmsh.so
+# 또는: gfortran -O1 -fPIC -shared -ffixed-line-length-none msh_core_lib.for -o libmsh.so
 
-# 2. 단일 노드 40코어 전체 연도(1~12월) 실행
+# 2. 로컬 또는 인터랙티브 노드 단일 실행 (2018년 전체)
 python3 hpc_pipeline.py --year 2018 --total-cores 40 --workers-per-month 3 --concurrent-months 4 --dx 0.5 --out-dir output_nc
 
 # 3. 특정 월(예: 1월, 6월) 지정 실행
 python3 hpc_pipeline.py --year 2018 --months 1 6 --total-cores 40 --dx 0.5
 
-# 4. Slurm 클러스터 배치 제출
-sbatch run_slurm.sh 2018
+# 4. NASA Pleiades/NAS 슈퍼컴퓨터 PBS 배치 작업 제출 (기본 2018년)
+qsub run_pbs.sh
+
+# 5. 특정 연도 지정 제출 (예: 2019년)
+qsub -v TARGET_YEAR=2019 run_pbs.sh
 ```
