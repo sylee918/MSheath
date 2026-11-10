@@ -1,0 +1,69 @@
+Job 25372686.pbspl1.nas.nasa.gov started on Tue Nov 10 12:44:08 PST 2026
+The job requested the following resources:
+    ncpus=8
+    place=scatter:excl
+    walltime=00:10:00
+
+PBS set the following environment variables:
+        FORT_BUFFERED = 1
+                   TZ = PST8PDT
+
+On r141i5n5:
+Current directory is /nobackup/slee122/MSheath
+/home6/slee122/.profile: line 14: .bashrc: No such file or directory
+==================================================================
+Starting Quick Verification Test on Host: r141i5n5
+Queue: devel | Allocated Cores: 8
+==================================================================
+>>> Running test_hpc_pipeline.py ...
+Load IGRF coefficients ...
+Failed to get the list of IGRF coefficients.
+Traceback (most recent call last):
+  File "/nobackupp28/slee122/MSheath/test_hpc_pipeline.py", line 11, in <module>
+    from grid_engine import get_msh_lib
+  File "/nobackupp28/slee122/MSheath/grid_engine.py", line 16, in <module>
+    from coord_transform import compute_epoch_rotations, gse_to_gsm_coords, gsm_to_gse_vector
+  File "/nobackupp28/slee122/MSheath/coord_transform.py", line 31, in <module>
+    from geopack import geopack as _gp
+  File "/home6/slee122/.local/lib/python3.11/site-packages/geopack/geopack.py", line 1442, in <module>
+    init_igrf()
+  File "/home6/slee122/.local/lib/python3.11/site-packages/geopack/geopack.py", line 78, in init_igrf
+    version = max(versions, key=int)
+              ^^^^^^^^^^^^^^^^^^^^^^
+ValueError: max() arg is an empty sequence
+>>> Running quick pipeline benchmark (288 steps) ...
+Load IGRF coefficients ...
+Failed to get the list of IGRF coefficients.
+Traceback (most recent call last):
+  File "/nobackupp28/slee122/MSheath/hpc_pipeline.py", line 25, in <module>
+    from coord_transform import verify_coordinate_transforms
+  File "/nobackupp28/slee122/MSheath/coord_transform.py", line 31, in <module>
+    from geopack import geopack as _gp
+  File "/home6/slee122/.local/lib/python3.11/site-packages/geopack/geopack.py", line 1442, in <module>
+    init_igrf()
+  File "/home6/slee122/.local/lib/python3.11/site-packages/geopack/geopack.py", line 78, in init_igrf
+    version = max(versions, key=int)
+              ^^^^^^^^^^^^^^^^^^^^^^
+ValueError: max() arg is an empty sequence
+==================================================================
+Quick Test Completed Successfully at Tue Nov 10 20:44:24 UTC 2026
+Output NetCDF file check:
+ls: cannot access 'test_nc/*.nc': No such file or directory
+==================================================================
+
+____________________________________________________________________
+Job Resource Usage Summary for 25372686.pbspl1.nas.nasa.gov
+
+    CPU Time Used            : 00:00:03
+    Real Memory Used         : 89296kb
+    Walltime Used            : 00:00:14
+    Exit Status              : 0
+
+    Number of CPUs Requested : 8
+    Walltime Requested       : 00:10:00
+
+    Execution Queue          : devel
+    Charged To               : s3015
+
+    Job Stopped              : Tue Nov 10 12:44:27 2026
+____________________________________________________________________
