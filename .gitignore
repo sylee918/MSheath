@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+MSH_TEST.o*
+
+
 # C / Fortran binaries & shared objects
 *.so
 *.o
