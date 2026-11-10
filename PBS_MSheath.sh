@@ -13,7 +13,7 @@ ulimit -s unlimited
 
 # Load required compiler and system modules on NAS/Pleiades
 module load comp-intel
-module load pkgsrc
+module load pkgsrc python3
 
 # Go to the submission working directory
 cd "$PBS_O_WORKDIR"
@@ -38,7 +38,7 @@ if [ ! -f "./libmsh.so" ]; then
     fi
 fi
 
-# Step 2: Determine target year (Default: 2018 or pass via `qsub -v TARGET_YEAR=2019 run_pbs.sh`)
+# Step 2: Determine target year (Default: 2018 or pass via `qsub -v TARGET_YEAR=2019 PBS_MSheath.sh`)
 TARGET_YEAR="${TARGET_YEAR:-2018}"
 TOTAL_CORES=40
 

@@ -50,11 +50,11 @@ date: 2026-11-10
 ---
 
 ## 4. 본 실행(Annual Production Run) 안내
-검증이 완벽하게 끝났으므로, 2018년 1년 치 전체 연산 잡을 `run_pbs.sh`로 제출할 준비가 완료됨:
+검증이 완벽하게 끝났으므로, 2018년 1년 치 전체 연산 잡을 `PBS_MSheath.sh`로 제출할 준비가 완료됨:
 ```bash
 # 1. 2018년 OMNI 데이터 다운로드 (프론트엔드 pfe에서 1회 실행)
 ./download_omni.sh 2018
 
 # 2. 40코어 정규 배치 잡 제출
-qsub run_pbs.sh
+qsub PBS_MSheath.sh
 ```
