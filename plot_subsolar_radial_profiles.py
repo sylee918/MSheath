@@ -12,6 +12,7 @@ Also overlays:
 """
 
 import os
+import csv
 import argparse
 import numpy as np
 import netCDF4 as nc
@@ -20,7 +21,77 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-def plot_profiles(summary_path: str, out_dir: str = "figures", year: int = 2018):
+def export_profile_data(
+    export_dir: str,
+    year: int,
+    x_plot: np.ndarray,
+    np_p: np.ndarray,
+    np_s: np.ndarray,
+    tk_p: np.ndarray,
+    tk_s: np.ndarray,
+    vx_p: np.ndarray,
+    vx_s: np.ndarray,
+    rmp_mean: float,
+    rmp_p10: float,
+    rmp_p90: float,
+    rbs_mean: float,
+    rbs_p10: float,
+    rbs_p90: float,
+):
+    """Export clean 1D subsolar radial profile data (without median or MSH probability) to CSV."""
+    os.makedirs(export_dir, exist_ok=True)
+    profile_csv = os.path.join(export_dir, f"subsolar_radial_profiles_{year}.csv")
+    with open(profile_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "x_gse_Re",
+            "np_mean_cm3",
+            "np_std_cm3",
+            "temp_MK_mean",
+            "temp_MK_std",
+            "vx_gse_mean_kms",
+            "vx_gse_std_kms",
+        ])
+        for i in range(len(x_plot)):
+            writer.writerow([
+                f"{x_plot[i]:.2f}",
+                f"{np_p[i]:.6g}",
+                f"{np_s[i]:.6g}",
+                f"{tk_p[i]:.6g}",
+                f"{tk_s[i]:.6g}",
+                f"{vx_p[i]:.6g}",
+                f"{vx_s[i]:.6g}",
+            ])
+    print(f"  -> Exported data: {profile_csv}")
+
+    bounds_csv = os.path.join(export_dir, f"subsolar_boundaries_{year}.csv")
+    with open(bounds_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["boundary", "mean_Re", "p10_Re", "p90_Re"])
+        writer.writerow(["R_MP0", f"{rmp_mean:.4f}", f"{rmp_p10:.4f}", f"{rmp_p90:.4f}"])
+        writer.writerow(["R_BS0", f"{rbs_mean:.4f}", f"{rbs_p10:.4f}", f"{rbs_p90:.4f}"])
+    print(f"  -> Exported boundaries: {bounds_csv}")
+
+
+def save_standalone_legend(handles, labels, out_path: str):
+    """Save a clean standalone legend figure."""
+    fig_leg = plt.figure(figsize=(10, 2.2))
+    fig_leg.legend(
+        handles,
+        labels,
+        loc="center",
+        ncol=2,
+        frameon=True,
+        framealpha=1.0,
+        edgecolor="#cccccc",
+        fontsize=10.5,
+    )
+    fig_leg.savefig(out_path, dpi=220, bbox_inches="tight", pad_inches=0.15)
+    plt.close(fig_leg)
+    print(f"  -> Saved legend: {out_path}")
+
+
+def plot_profiles(summary_path: str, out_dir: str = "figures", export_dir: str = "summary_stats", year: int = 2018):
     os.makedirs(out_dir, exist_ok=True)
     with nc.Dataset(summary_path, "r") as ds:
         x = np.array(ds.variables["x_gse"][:], dtype=np.float64)
@@ -30,18 +101,13 @@ def plot_profiles(summary_path: str, out_dir: str = "figures", year: int = 2018)
         # 1. Annual Profiles along Y=0 (Equatorial plane)
         np_mean = np.array(ds.variables["annual_eq_np_mean"][:, iy0], dtype=np.float64)
         np_std = np.array(ds.variables["annual_eq_np_std"][:, iy0], dtype=np.float64)
-        np_med = np.array(ds.variables["annual_eq_np_median"][:, iy0], dtype=np.float64)
 
         tk_mean = np.array(ds.variables["annual_eq_temp_k_mean"][:, iy0], dtype=np.float64) / 1e6
         tk_std = np.array(ds.variables["annual_eq_temp_k_std"][:, iy0], dtype=np.float64) / 1e6
-        tk_med = np.array(ds.variables["annual_eq_temp_k_median"][:, iy0], dtype=np.float64) / 1e6
 
         # Flow velocity components along X
         vx_mean = np.array(ds.variables["annual_eq_vx_gse_mean"][:, iy0], dtype=np.float64)
         vx_std = np.array(ds.variables["annual_eq_vx_gse_std"][:, iy0], dtype=np.float64)
-
-        # MSH probability profile
-        msh_frac = np.array(ds.variables["annual_eq_msh_fraction"][:, iy0], dtype=np.float64) * 100.0
 
         # Subsolar boundary locations from 1D time series
         rbs_ts = np.array(ds.variables["subsolar_rbs_Re"][:], dtype=np.float64)
@@ -71,72 +137,88 @@ def plot_profiles(summary_path: str, out_dir: str = "figures", year: int = 2018)
     x_mask = x >= 0.0
     x_plot = x[x_mask]
 
+    np_p = np_mean[x_mask]
+    np_s = np_std[x_mask]
+    tk_p = tk_mean[x_mask]
+    tk_s = tk_std[x_mask]
+    vx_p = vx_mean[x_mask]
+    vx_s = vx_std[x_mask]
+
+    # Export clean data to CSV for reuse
+    export_profile_data(
+        export_dir=export_dir,
+        year=year,
+        x_plot=x_plot,
+        np_p=np_p,
+        np_s=np_s,
+        tk_p=tk_p,
+        tk_s=tk_s,
+        vx_p=vx_p,
+        vx_s=vx_s,
+        rmp_mean=rmp_mean,
+        rmp_p10=rmp_p10,
+        rmp_p90=rmp_p90,
+        rbs_mean=rbs_mean,
+        rbs_p10=rbs_p10,
+        rbs_p90=rbs_p90,
+    )
+
     def add_boundary_overlays(ax):
         # Magnetopause
         ax.axvspan(rmp_p10, rmp_p90, color="#d95f02", alpha=0.15, label=f"$R_{{\\mathrm{{MP}},0}}$ Range (10-90%): [{rmp_p10:.1f}, {rmp_p90:.1f}] $R_E$")
-        ax.axvline(rmp_mean, color="#d95f02", ls="--", lw=1.8, label=f"Mean $R_{{\\mathrm{{MP}},0}} = {rmp_mean:.2f}\ R_E$")
+        ax.axvline(rmp_mean, color="#d95f02", ls="--", lw=1.8, label=f"Mean $R_{{\\mathrm{{MP}},0}} = {rmp_mean:.2f}\\ R_E$")
         # Bow Shock
         ax.axvspan(rbs_p10, rbs_p90, color="#1b9e77", alpha=0.15, label=f"$R_{{\\mathrm{{BS}},0}}$ Range (10-90%): [{rbs_p10:.1f}, {rbs_p90:.1f}] $R_E$")
-        ax.axvline(rbs_mean, color="#1b9e77", ls="--", lw=1.8, label=f"Mean $R_{{\\mathrm{{BS}},0}} = {rbs_mean:.2f}\ R_E$")
+        ax.axvline(rbs_mean, color="#1b9e77", ls="--", lw=1.8, label=f"Mean $R_{{\\mathrm{{BS}},0}} = {rbs_mean:.2f}\\ R_E$")
         ax.grid(True, ls=":", alpha=0.5, color="black")
 
     # Panel 1: Proton Number Density (Np)
     ax1 = axes[0]
     add_boundary_overlays(ax1)
-    np_p = np_mean[x_mask]
-    np_s = np_std[x_mask]
-    np_m = np_med[x_mask]
-
     ax1.plot(x_plot, np_p, color="#08519c", lw=2.5, label="Annual Mean $N_p$")
-    ax1.fill_between(x_plot, np.maximum(0, np_p - np_s), np_p + np_s, color="#4292c6", alpha=0.35, label="$\\pm 1\\sigma$ Standard Deviation")
-    ax1.plot(x_plot, np_m, color="#08306b", ls=":", lw=1.6, label="Annual Median $N_p$")
-
-    # Secondary axis for MSH probability
-    ax1_r = ax1.twinx()
-    ax1_r.plot(x_plot, msh_frac[x_mask], color="#756bb1", ls="-.", lw=1.5, alpha=0.85, label="MSH Probability (%)")
-    ax1_r.set_ylabel("MSH Residence Prob. [%]", color="#756bb1", fontsize=11)
-    ax1_r.tick_params(axis="y", labelcolor="#756bb1")
-    ax1_r.set_ylim(0, 105)
-
+    ax1.fill_between(x_plot, np.maximum(0, np_p - np_s), np_p + np_s, color="#4292c6", alpha=0.35, label="$N_p$ $\\pm 1\\sigma$ Std. Dev.")
     ax1.set_ylabel("Proton Number Density $N_p$ [$\\mathrm{cm}^{-3}$]", fontsize=11)
     ax1.set_title("(a) Proton Density Compression & Stagnation across Subsolar Shock & Sheath", fontsize=11.5, loc="left")
     ax1.set_ylim(0, max(80, np.nanmax(np_p + np_s) * 1.05))
-    ax1.legend(loc="upper right", framealpha=0.9, fontsize=9.5)
 
     # Panel 2: Proton Temperature (Tp)
     ax2 = axes[1]
     add_boundary_overlays(ax2)
-    tk_p = tk_mean[x_mask]
-    tk_s = tk_std[x_mask]
-    tk_m = tk_med[x_mask]
-
     ax2.plot(x_plot, tk_p, color="#bd0026", lw=2.5, label="Annual Mean $T_p$")
-    ax2.fill_between(x_plot, np.maximum(0, tk_p - tk_s), tk_p + tk_s, color="#fb6a4a", alpha=0.35, label="$\\pm 1\\sigma$ Standard Deviation")
-    ax2.plot(x_plot, tk_m, color="#800026", ls=":", lw=1.6, label="Annual Median $T_p$")
+    ax2.fill_between(x_plot, np.maximum(0, tk_p - tk_s), tk_p + tk_s, color="#fb6a4a", alpha=0.35, label="$T_p$ $\\pm 1\\sigma$ Std. Dev.")
     ax2.set_ylabel("Proton Temperature $T_p$ [MK]", fontsize=11)
     ax2.set_title("(b) Shock Heating & Temperature Dissipation Profile", fontsize=11.5, loc="left")
     ax2.set_ylim(0, max(5.0, np.nanmax(tk_p + tk_s) * 1.05))
-    ax2.legend(loc="upper right", framealpha=0.9, fontsize=9.5)
 
     # Panel 3: Inflow Velocity (Vx) Deceleration
     ax3 = axes[2]
     add_boundary_overlays(ax3)
-    vx_p = vx_mean[x_mask]
-    vx_s = vx_std[x_mask]
-
     ax3.plot(x_plot, vx_p, color="#238b45", lw=2.5, label="Annual Mean $V_x$ (Inflow)")
-    ax3.fill_between(x_plot, vx_p - vx_s, vx_p + vx_s, color="#74c476", alpha=0.35, label="$\\pm 1\\sigma$ Standard Deviation")
+    ax3.fill_between(x_plot, vx_p - vx_s, vx_p + vx_s, color="#74c476", alpha=0.35, label="$V_x$ $\\pm 1\\sigma$ Std. Dev.")
     ax3.axhline(0, color="gray", lw=1.0, ls="-")
     ax3.set_ylabel("Flow Velocity $V_x$ [km/s]", fontsize=11)
-    ax3.set_xlabel("Radial Distance from Earth Center along GSE X-Axis $X_{\\mathrm{GSE}}$ [$R_E$] (Sun $\\leftarrow$)", fontsize=11.5)
+    ax3.set_xlabel("Radial Distance from Earth Center along GSE X-Axis $X_{\\mathrm{GSE}}$ [$R_E$] (Sun $\\rightarrow$)", fontsize=11.5)
     ax3.set_title("(c) Solar Wind Deceleration across Bow Shock into Magnetopause Stagnation", fontsize=11.5, loc="left")
     ax3.set_xlim(5, 20)
-    ax3.legend(loc="lower right", framealpha=0.9, fontsize=9.5)
+
+    # Collect combined unique legend handles/labels and save separately
+    all_handles, all_labels = [], []
+    seen = set()
+    for ax in (ax1, ax2, ax3):
+        h_list, l_list = ax.get_legend_handles_labels()
+        for h, l in zip(h_list, l_list):
+            if l not in seen:
+                seen.add(l)
+                all_handles.append(h)
+                all_labels.append(l)
 
     out_file1 = os.path.join(out_dir, f"fig6_{year}_subsolar_radial_profiles_np_temp_vx.png")
     fig.savefig(out_file1, dpi=220)
     plt.close(fig)
     print(f"  -> Saved: {out_file1}")
+
+    out_legend = os.path.join(out_dir, f"fig6_{year}_subsolar_radial_profiles_legend.png")
+    save_standalone_legend(all_handles, all_labels, out_legend)
 
     # -------------------------------------------------------------
     # Figure 2: Physical Regimes Comparison along Nose Line
@@ -184,6 +266,7 @@ def main():
     parser = argparse.ArgumentParser(description="Plot Subsolar Radial Profiles of Np and Tp along X-axis.")
     parser.add_argument("--summary", type=str, default="summary_stats/MSH_GSE_2018_Summary.nc")
     parser.add_argument("--out-dir", type=str, default="figures")
+    parser.add_argument("--export-dir", type=str, default="summary_stats")
     parser.add_argument("--year", type=int, default=None)
     args = parser.parse_args()
 
@@ -193,7 +276,7 @@ def main():
         m = re.search(r"(\d{4})", os.path.basename(args.summary))
         year = int(m.group(1)) if m else 2018
 
-    plot_profiles(summary_path=args.summary, out_dir=args.out_dir, year=year)
+    plot_profiles(summary_path=args.summary, out_dir=args.out_dir, export_dir=args.export_dir, year=year)
 
 
 if __name__ == "__main__":
