@@ -1,0 +1,62 @@
+Job 25398286.pbspl1.nas.nasa.gov started on Mon Nov 16 13:33:02 PST 2026
+The job requested the following resources:
+    ncpus=40
+    place=scatter:excl
+    walltime=02:00:00
+
+PBS set the following environment variables:
+        FORT_BUFFERED = 1
+                   TZ = PST8PDT
+
+On r143i6n32:
+Current directory is /nobackup/slee122/MSheath
+/home6/slee122/.profile: line 14: .bashrc: No such file or directory
+==================================================================
+Job ID: 25398286.pbspl1.nas.nasa.gov
+Running on Host: r143i6n32
+Target Year: 2018 | Total Cores: 40
+Start Time: Mon Nov 16 21:33:07 UTC 2026
+==================================================================
+Load IGRF coefficients ...
+Failed to get the list of IGRF coefficients.
+==============================================================================
+[HPC GSE 3D MSheath Pipeline] Year=2018 | Total Cores=40 | Workers/Month=10 | Concurrent Months=4 | Grid=(-10.0..20.0:1.0, -25.0..25.0:1.0, -15.0..15.0:1.0) Re
+==============================================================================
+[Stage 1] Loaded 105,120 5-min OMNI records for 2018: Observed=97,516, Interpolated(<=15m)=4,931, Missing=2,673
+[Stage 2] Coordinate Transform Verification: passed=True | det_err=2.22e-16 | roundtrip_err=1.07e-14 Re | OMNI B-field RMS diff=0.0153 nT
+  -> [Month 2018-01] Steps=8741/8928 | Time=307.52s | Output=output_nc/MSH_GSE_2018-01.nc (207.85 MB)
+  -> [Month 2018-02] Steps=7791/8064 | Time=319.85s | Output=output_nc/MSH_GSE_2018-02.nc (182.39 MB)
+  -> [Month 2018-03] Steps=8785/8928 | Time=333.35s | Output=output_nc/MSH_GSE_2018-03.nc (202.81 MB)
+  -> [Month 2018-04] Steps=8430/8640 | Time=346.37s | Output=output_nc/MSH_GSE_2018-04.nc (194.57 MB)
+  -> [Month 2018-05] Steps=8681/8928 | Time=303.63s | Output=output_nc/MSH_GSE_2018-05.nc (206.15 MB)
+  -> [Month 2018-06] Steps=8319/8640 | Time=316.73s | Output=output_nc/MSH_GSE_2018-06.nc (200.66 MB)
+  -> [Month 2018-07] Steps=8477/8928 | Time=330.25s | Output=output_nc/MSH_GSE_2018-07.nc (203.65 MB)
+  -> [Month 2018-08] Steps=8565/8928 | Time=343.73s | Output=output_nc/MSH_GSE_2018-08.nc (200.60 MB)
+  -> [Month 2018-09] Steps=8573/8640 | Time=293.08s | Output=output_nc/MSH_GSE_2018-09.nc (196.96 MB)
+  -> [Month 2018-10] Steps=8857/8928 | Time=307.73s | Output=output_nc/MSH_GSE_2018-10.nc (203.89 MB)
+  -> [Month 2018-11] Steps=8573/8640 | Time=321.66s | Output=output_nc/MSH_GSE_2018-11.nc (203.36 MB)
+  -> [Month 2018-12] Steps=8655/8928 | Time=336.26s | Output=output_nc/MSH_GSE_2018-12.nc (210.39 MB)
+==============================================================================
+[HPC Pipeline Complete] Processed 12 month(s) in 1027.39 s.
+==============================================================================
+==================================================================
+Completed Job for Year=2018 at Mon Nov 16 21:50:22 UTC 2026
+Outputs generated in: /nobackup/slee122/MSheath/output_nc
+==================================================================
+
+____________________________________________________________________
+Job Resource Usage Summary for 25398286.pbspl1.nas.nasa.gov
+
+    CPU Time Used            : 09:04:52
+    Real Memory Used         : 10917700kb
+    Walltime Used            : 00:17:16
+    Exit Status              : 0
+
+    Number of CPUs Requested : 40
+    Walltime Requested       : 02:00:00
+
+    Execution Queue          : devel
+    Charged To               : s3015
+
+    Job Stopped              : Mon Nov 16 13:50:25 2026
+____________________________________________________________________
