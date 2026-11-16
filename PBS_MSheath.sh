@@ -39,7 +39,7 @@ if [ ! -f "./libmsh.so" ]; then
 fi
 
 # Step 2: Determine target year (Default: 2018 or pass via `qsub -v TARGET_YEAR=2019 PBS_MSheath.sh`)
-TARGET_YEAR="${TARGET_YEAR:-2018}"
+TARGET_YEAR="${TARGET_YEAR:-2025}"
 TOTAL_CORES=40
 
 OMNI_LOCAL_PATH="data/omni_5min/omni_5min${TARGET_YEAR}.asc"
