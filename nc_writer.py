@@ -127,46 +127,49 @@ def save_monthly_netcdf(
         _add_1d("imf_bz_gsm", "f4", df_month["bz_gsm"].to_numpy(dtype=np.float32),
                 "IMF Bz (GSM)", "nT")
 
-        # 5. 3D Time-Resolved 2D Grids: Equatorial (time, x_gse, y_gse) & Meridional (time, x_gse, z_gse)
+        # 5. Optional 5-min Time-Resolved 2D Grids: Equatorial (time, x_gse, y_gse) & Meridional (time, x_gse, z_gse)
         for plane, dim2, plane_desc in [
             ("eq", "y_gse", "GSE Equatorial Plane (Z_GSE = 0)"),
             ("mer", "z_gse", "GSE Noon-Midnight Meridional Plane (Y_GSE = 0)"),
         ]:
-            # Region Flag
-            v_flg = ds.createVariable(
-                f"{plane}_region_flag",
-                "i1",
-                ("time", "x_gse", dim2),
-                zlib=True,
-                complevel=complevel,
-            )
-            v_flg.long_name = f"Region Identification Flag on {plane_desc}"
-            v_flg.flag_values = np.array([-2, -1, 0, 1, 2], dtype=np.int8)
-            v_flg.flag_meanings = (
-                "missing_omni_step masked_invalid_or_nightside inside_magnetopause "
-                "magnetosheath upstream_solar_wind"
-            )
-            v_flg[:] = chunk_res[f"{plane}_flag"]
-
-            for vkey, (desc, unit) in VAR_META.items():
-                v_3d = ds.createVariable(
-                    f"{plane}_{vkey}",
-                    "f4",
+            if f"{plane}_np" in chunk_res:
+                # Region Flag
+                v_flg = ds.createVariable(
+                    f"{plane}_region_flag",
+                    "i1",
                     ("time", "x_gse", dim2),
                     zlib=True,
                     complevel=complevel,
-                    fill_value=np.nan,
                 )
-                v_3d.long_name = f"{desc} on {plane_desc}"
-                v_3d.units = unit
-                v_3d.coordinates = f"time x_gse {dim2}"
-                v_3d[:] = chunk_res[f"{plane}_{vkey}"]
+                v_flg.long_name = f"Region Identification Flag on {plane_desc}"
+                v_flg.flag_values = np.array([-2, -1, 0, 1, 2], dtype=np.int8)
+                v_flg.flag_meanings = (
+                    "missing_omni_step masked_invalid_or_nightside inside_magnetopause "
+                    "magnetosheath upstream_solar_wind"
+                )
+                v_flg[:] = chunk_res[f"{plane}_flag"]
 
-            # 6. Monthly 2D Summary Statistics (Mean, Median, Std, Counts)
+                for vkey, (desc, unit) in VAR_META.items():
+                    v_3d = ds.createVariable(
+                        f"{plane}_{vkey}",
+                        "f4",
+                        ("time", "x_gse", dim2),
+                        zlib=True,
+                        complevel=complevel,
+                        fill_value=np.nan,
+                    )
+                    v_3d.long_name = f"{desc} on {plane_desc}"
+                    v_3d.units = unit
+                    v_3d.coordinates = f"time x_gse {dim2}"
+                    v_3d[:] = chunk_res[f"{plane}_{vkey}"]
+
+            # 6. Monthly 2D Summary Statistics (Mean, [Median], Std, Counts)
             for c_type, c_desc in [
                 ("valid_count", "Total Valid Evaluated Timesteps in Month"),
                 ("msh_count", "Total Timesteps Located Inside Magnetosheath (flag==1)"),
             ]:
+                if f"{plane}_{c_type}" not in stats:
+                    continue
                 vc = ds.createVariable(
                     f"{plane}_{c_type}",
                     "i4",
@@ -181,8 +184,11 @@ def save_monthly_netcdf(
             for vkey in ["np", "temp_k", "vx_gse", "vy_gse", "vz_gse", "vmag"]:
                 desc, unit = VAR_META[vkey]
                 for stat_name in ["mean", "median", "std"]:
+                    skey = f"{plane}_{vkey}_{stat_name}"
+                    if skey not in stats:
+                        continue
                     vs = ds.createVariable(
-                        f"{plane}_{vkey}_{stat_name}",
+                        skey,
                         "f4",
                         ("x_gse", dim2),
                         zlib=True,
@@ -191,7 +197,7 @@ def save_monthly_netcdf(
                     )
                     vs.long_name = f"Monthly {stat_name.capitalize()} of {desc} on {plane_desc}"
                     vs.units = unit
-                    vs[:] = stats[f"{plane}_{vkey}_{stat_name}"]
+                    vs[:] = stats[skey]
 
         # 7. Monthly 3D Volume Summary Statistics (x_gse, y_gse, z_gse)
         if "vol_valid_count" in stats:

@@ -136,19 +136,21 @@ def test_3_end_to_end_pipeline():
         x_gse = np.ma.filled(ds.variables["x_gse"][:], np.nan)
         y_gse = np.ma.filled(ds.variables["y_gse"][:], np.nan)
         z_gse = np.ma.filled(ds.variables["z_gse"][:], np.nan)
-        mer_np = np.ma.filled(ds.variables["mer_np"][:], np.nan)
-        mer_flg = np.ma.filled(ds.variables["mer_region_flag"][:], -99)
+        assert "eq_np" not in ds.variables and "mer_np" not in ds.variables, (
+            "5-min 2D timeseries must be omitted by default!"
+        )
+        mer_np_mean = np.ma.filled(ds.variables["mer_np_mean"][:], np.nan)
+        mer_cnt = np.ma.filled(ds.variables["mer_valid_count"][:], 0)
         eq_np_mean = np.ma.filled(ds.variables["eq_np_mean"][:], np.nan)
-        eq_np_med = np.ma.filled(ds.variables["eq_np_median"][:], np.nan)
         eq_cnt = np.ma.filled(ds.variables["eq_valid_count"][:], 0)
 
-        # Verify X_GSE < 0 in Meridional plane is 100% masked (NaN and flag == -1)
+        # Verify X_GSE < 0 in Meridional plane stats is 100% masked (NaN and count == 0)
         ix_neg = np.where(x_gse < 0)[0]
-        assert np.all(np.isnan(mer_np[:, ix_neg, :])), "Meridional X<0 must be NaN!"
-        assert np.all(mer_flg[:, ix_neg, :] == -1), "Meridional X<0 flag must be -1!"
-        print(f"  Meridional X_GSE < 0 skip/mask verified (all {len(ix_neg)} X<0 slices are NaN & flag=-1)")
+        assert np.all(np.isnan(mer_np_mean[ix_neg, :])), "Meridional X<0 mean must be NaN!"
+        assert np.all(mer_cnt[ix_neg, :] == 0), "Meridional X<0 valid_count must be 0!"
+        print(f"  Meridional X_GSE < 0 skip/mask verified (all {len(ix_neg)} X<0 slices are NaN & count=0)")
         print(f"  Equatorial peak monthly mean Np: {np.nanmax(eq_np_mean):.2f} cm^-3, "
-              f"median Np: {np.nanmax(eq_np_med):.2f} cm^-3, max valid count: {np.max(eq_cnt)}")
+              f"max valid count: {np.max(eq_cnt)}")
 
         # Verify 3D Volume statistics variables
         expected_shape = (len(x_gse), len(y_gse), len(z_gse))

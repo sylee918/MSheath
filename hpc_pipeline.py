@@ -48,6 +48,8 @@ def _merge_subchunks(sub_results: List[Tuple[int, Dict[str, Any]]]) -> Dict[str,
         "y_axis": first["y_axis"],
         "z_axis": first["z_axis"],
     }
+    if "ix_start" in first:
+        merged["ix_start"] = first["ix_start"]
 
     time_keys = [
         "unix_time", "quality_flag", "psi_deg", "gsm_gse_angle_deg",
@@ -55,7 +57,8 @@ def _merge_subchunks(sub_results: List[Tuple[int, Dict[str, Any]]]) -> Dict[str,
         "mer_np", "mer_temp_k", "mer_vx_gse", "mer_vy_gse", "mer_vz_gse", "mer_vmag", "mer_rbs", "mer_rmp", "mer_flag",
     ]
     for k in time_keys:
-        merged[k] = np.concatenate([r[k] for _, r in sub_results], axis=0)
+        if k in first:
+            merged[k] = np.concatenate([r[k] for _, r in sub_results], axis=0)
 
     vol_keys = [
         "vol_valid_count", "vol_msh_count", "vol_bndry_count",
@@ -173,6 +176,7 @@ def run_annual_pipeline(
     out_dir: str = "output_nc",
     omni_file: Optional[str] = None,
     max_steps_per_month: Optional[int] = None,
+    save_2d_timeseries: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Execute the full 3D HPC pipeline for a given year (or selected months).
@@ -218,6 +222,7 @@ def run_annual_pipeline(
         ymin=ymin, ymax=ymax, dy=eff_dy,
         zmin=zmin, zmax=zmax, dz=eff_dz,
         skip_meridional_nightside=True,
+        save_2d_timeseries=save_2d_timeseries,
     )
 
     # Step 3 & 4: Execute monthly chunks in parallel waves across the shared ProcessPool
@@ -349,6 +354,11 @@ def main():
         default=None,
         help="Optional cap on steps per month (for quick verification/benchmarking)",
     )
+    parser.add_argument(
+        "--save-2d-timeseries",
+        action="store_true",
+        help="Also save 5-min 2D Equatorial/Meridional time-series arrays (increases file size to ~200 MB/month)",
+    )
     args = parser.parse_args()
 
     run_annual_pipeline(
@@ -369,6 +379,7 @@ def main():
         out_dir=args.out_dir,
         omni_file=args.omni_file,
         max_steps_per_month=args.max_steps,
+        save_2d_timeseries=args.save_2d_timeseries,
     )
 
 

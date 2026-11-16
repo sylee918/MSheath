@@ -221,25 +221,35 @@ def find_monthly_files(in_dir: str, year: int) -> Dict[int, str]:
     return found
 
 
-def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: Optional[float] = 0.1) -> str:
+def build_summary(
+    in_dir: str,
+    out_path: str,
+    year: int = 2018,
+    bg_msp_density: Optional[float] = 0.1,
+    stats_only: bool = False,
+) -> str:
     t0 = time.perf_counter()
     monthly_files = find_monthly_files(in_dir, year)
     if not monthly_files:
         raise FileNotFoundError(f"No MSH_GSE_{year:04d}-MM.nc files found in '{in_dir}'.")
 
     months_present = sorted(monthly_files.keys())
-    print("=" * 76)
-    print(f"[Summary Builder] Found {len(months_present)} monthly file(s) in: {in_dir}")
-    print(f"                  Months: {months_present}")
-    print("=" * 76)
 
-    # Inspect grid coordinates from first available file
+    # Inspect grid coordinates and available datasets from first available file
     first_file = monthly_files[months_present[0]]
     with nc.Dataset(first_file, "r") as ds0:
         x_gse = np.array(ds0.variables["x_gse"][:], dtype=np.float32)
         y_gse = np.array(ds0.variables["y_gse"][:], dtype=np.float32)
         z_gse = np.array(ds0.variables["z_gse"][:], dtype=np.float32)
         has_vol = "vol_valid_count" in ds0.variables
+        has_2d_ts = ("eq_np" in ds0.variables) and (not stats_only)
+        has_2d_median = "eq_np_median" in ds0.variables
+
+    mode_str = "FULL (3D Stats + 2D 5-min Timeseries/Regimes)" if has_2d_ts else "STATS-ONLY (Fast 3D + 2D Monthly Pooling)"
+    print("=" * 76)
+    print(f"[Summary Builder] Found {len(months_present)} monthly file(s) in: {in_dir}")
+    print(f"                  Months: {months_present} | Mode: {mode_str}")
+    print("=" * 76)
 
     nx, ny, nz = len(x_gse), len(y_gse), len(z_gse)
     eq_shape = (nx, ny)
@@ -367,9 +377,27 @@ def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: 
 
                 for v in VARS:
                     for st in ["mean", "median", "std"]:
-                        m_data[f"{plane}_{v}_{st}"][m_idx] = np.array(
-                            ds.variables[f"{plane}_{v}_{st}"][:], dtype=np.float32
-                        )
+                        vname_st = f"{plane}_{v}_{st}"
+                        if vname_st in ds.variables:
+                            m_data[vname_st][m_idx] = np.array(
+                                ds.variables[vname_st][:], dtype=np.float32
+                            )
+
+                if not has_2d_ts:
+                    if plane == "eq":
+                        ts_lists["time"].append(t_arr)
+                        ts_lists["month"].append(np.full(nt, m, dtype=np.int8))
+                        ts_lists["omni_quality_flag"].append(q_flag)
+                        ts_lists["dipole_tilt_deg"].append(psi_deg)
+                        ts_lists["gsm_to_gse_roll_deg"].append(roll_deg)
+                        ts_lists["sw_vsw"].append(vsw)
+                        ts_lists["sw_np"].append(sw_np)
+                        ts_lists["sw_temp_k"].append(sw_tk)
+                        ts_lists["sw_pdyn_npa"].append(pdyn)
+                        ts_lists["imf_bx_gsm"].append(bx)
+                        ts_lists["imf_by_gsm"].append(by)
+                        ts_lists["imf_bz_gsm"].append(bz)
+                    continue
 
                 # 2. Load 3D arrays for MSH-only stats, boundary means, and regime composites
                 flg_3d = np.array(ds.variables[f"{plane}_region_flag"][:], dtype=np.int8)
@@ -468,7 +496,7 @@ def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: 
         print(f"  [Month {year:04d}-{m:02d}] Processed {nt:,} steps (valid={n_valid_m:,}) in {time.perf_counter()-tm0:.2f}s")
 
     # Concatenate 1D time series
-    ts_concat = {k: np.concatenate(v_list, axis=0) for k, v_list in ts_lists.items()}
+    ts_concat = {k: np.concatenate(v_list, axis=0) for k, v_list in ts_lists.items() if v_list}
     nt_total = len(ts_concat["time"])
 
     # Write output summary NetCDF4
@@ -520,13 +548,14 @@ def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: 
 
         # 1. Write Monthly 2D Statistics (month, x_gse, y_gse/z_gse)
         for plane, dim2 in [("eq", "y_gse"), ("mer", "z_gse")]:
-            for k_suffix, dtype in [
+            base_2d_fields = [
                 ("valid_count", "i4"),
                 ("msh_count", "i4"),
                 ("msh_fraction", "f4"),
-                ("rbs_mean", "f4"),
-                ("rmp_mean", "f4"),
-            ]:
+            ]
+            if has_2d_ts:
+                base_2d_fields.extend([("rbs_mean", "f4"), ("rmp_mean", "f4")])
+            for k_suffix, dtype in base_2d_fields:
                 k = f"{plane}_{k_suffix}"
                 kwargs = {"zlib": True, "complevel": complevel}
                 if dtype == "f4":
@@ -534,8 +563,13 @@ def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: 
                 var = ds_out.createVariable(f"monthly_{k}", dtype, ("month", "x_gse", dim2), **kwargs)
                 var[:] = m_data[k]
 
+            st_list = ["mean", "std"]
+            if has_2d_median:
+                st_list.append("median")
+            if has_2d_ts:
+                st_list.extend(["msh_mean", "msh_std"])
             for v in VARS:
-                for st in ["mean", "median", "std", "msh_mean", "msh_std"]:
+                for st in st_list:
                     k = f"{plane}_{v}_{st}"
                     var = ds_out.createVariable(
                         f"monthly_{k}", "f4", ("month", "x_gse", dim2), zlib=True, complevel=complevel, fill_value=np.nan
@@ -543,84 +577,85 @@ def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: 
                     var.units = VAR_META[v][1]
                     var[:] = m_data[k]
 
-            # 2. Write Annual 2D Maps (x_gse, y_gse/z_gse)
-            acc_a = acc_annual_all[plane]
-            acc_m = acc_annual_msh[plane]
+            if has_2d_ts:
+                # 2. Write Annual 2D Maps (x_gse, y_gse/z_gse)
+                acc_a = acc_annual_all[plane]
+                acc_m = acc_annual_msh[plane]
 
-            v_avc = ds_out.createVariable(f"annual_{plane}_valid_count", "i4", ("x_gse", dim2), zlib=True, complevel=complevel)
-            v_avc[:] = acc_a.count.astype(np.int32)
+                v_avc = ds_out.createVariable(f"annual_{plane}_valid_count", "i4", ("x_gse", dim2), zlib=True, complevel=complevel)
+                v_avc[:] = acc_a.count.astype(np.int32)
 
-            v_amc = ds_out.createVariable(f"annual_{plane}_msh_count", "i4", ("x_gse", dim2), zlib=True, complevel=complevel)
-            v_amc[:] = acc_m.count.astype(np.int32)
+                v_amc = ds_out.createVariable(f"annual_{plane}_msh_count", "i4", ("x_gse", dim2), zlib=True, complevel=complevel)
+                v_amc[:] = acc_m.count.astype(np.int32)
 
-            v_afr = ds_out.createVariable(f"annual_{plane}_msh_fraction", "f4", ("x_gse", dim2), zlib=True, complevel=complevel, fill_value=np.nan)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                v_afr[:] = np.where(acc_a.count > 0, acc_m.count / acc_a.count, np.nan).astype(np.float32)
-
-            v_arbs = ds_out.createVariable(f"annual_{plane}_rbs_mean", "f4", ("x_gse", dim2), zlib=True, complevel=complevel, fill_value=np.nan)
-            v_arbs[:] = acc_a.finalize_boundary("rbs", total_valid_steps_year)
-
-            v_armp = ds_out.createVariable(f"annual_{plane}_rmp_mean", "f4", ("x_gse", dim2), zlib=True, complevel=complevel, fill_value=np.nan)
-            v_armp[:] = acc_a.finalize_boundary("rmp", total_valid_steps_year)
-
-            for v in VARS:
-                a_mean, a_std = acc_a.finalize_var(v)
-                m_mean, m_std = acc_m.finalize_var(v)
-                # Approximate annual median from monthly medians
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", category=RuntimeWarning)
-                    a_med = np.nanmedian(m_data[f"{plane}_{v}_median"], axis=0).astype(np.float32)
-
-                for st_name, arr_2d in [
-                    ("mean", a_mean),
-                    ("median", a_med),
-                    ("std", a_std),
-                    ("msh_mean", m_mean),
-                    ("msh_std", m_std),
-                ]:
-                    vv = ds_out.createVariable(
-                        f"annual_{plane}_{v}_{st_name}", "f4", ("x_gse", dim2),
-                        zlib=True, complevel=complevel, fill_value=np.nan
-                    )
-                    vv.units = VAR_META[v][1]
-                    vv[:] = arr_2d
-
-            # 3. Write Conditional Physical Regime 2D Composites (regime, x_gse, y_gse/z_gse)
-            n2_len = ny if plane == "eq" else nz
-            reg_msh_frac = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
-            reg_rbs = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
-            reg_rmp = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
-
-            for ir in range(n_regimes):
-                ca = acc_regime_all[plane][ir].count
-                cm = acc_regime_msh[plane][ir].count
+                v_afr = ds_out.createVariable(f"annual_{plane}_msh_fraction", "f4", ("x_gse", dim2), zlib=True, complevel=complevel, fill_value=np.nan)
                 with np.errstate(divide="ignore", invalid="ignore"):
-                    reg_msh_frac[ir] = np.where(ca > 0, cm / ca, np.nan).astype(np.float32)
-                reg_rbs[ir] = acc_regime_all[plane][ir].finalize_boundary("rbs", int(regime_step_counts[ir]))
-                reg_rmp[ir] = acc_regime_all[plane][ir].finalize_boundary("rmp", int(regime_step_counts[ir]))
+                    v_afr[:] = np.where(acc_a.count > 0, acc_m.count / acc_a.count, np.nan).astype(np.float32)
 
-            for r_suf, r_arr in [("msh_fraction", reg_msh_frac), ("rbs_mean", reg_rbs), ("rmp_mean", reg_rmp)]:
-                vr = ds_out.createVariable(
-                    f"regime_{plane}_{r_suf}", "f4", ("regime", "x_gse", dim2),
-                    zlib=True, complevel=complevel, fill_value=np.nan
-                )
-                vr[:] = r_arr
+                v_arbs = ds_out.createVariable(f"annual_{plane}_rbs_mean", "f4", ("x_gse", dim2), zlib=True, complevel=complevel, fill_value=np.nan)
+                v_arbs[:] = acc_a.finalize_boundary("rbs", total_valid_steps_year)
 
-            for v in VARS:
-                r_all_mean = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
-                r_msh_mean = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
-                r_msh_std = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
+                v_armp = ds_out.createVariable(f"annual_{plane}_rmp_mean", "f4", ("x_gse", dim2), zlib=True, complevel=complevel, fill_value=np.nan)
+                v_armp[:] = acc_a.finalize_boundary("rmp", total_valid_steps_year)
+
+                for v in VARS:
+                    a_mean, a_std = acc_a.finalize_var(v)
+                    m_mean, m_std = acc_m.finalize_var(v)
+                    # Approximate annual median from monthly medians
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", category=RuntimeWarning)
+                        a_med = np.nanmedian(m_data[f"{plane}_{v}_median"], axis=0).astype(np.float32)
+
+                    for st_name, arr_2d in [
+                        ("mean", a_mean),
+                        ("median", a_med),
+                        ("std", a_std),
+                        ("msh_mean", m_mean),
+                        ("msh_std", m_std),
+                    ]:
+                        vv = ds_out.createVariable(
+                            f"annual_{plane}_{v}_{st_name}", "f4", ("x_gse", dim2),
+                            zlib=True, complevel=complevel, fill_value=np.nan
+                        )
+                        vv.units = VAR_META[v][1]
+                        vv[:] = arr_2d
+
+                # 3. Write Conditional Physical Regime 2D Composites (regime, x_gse, y_gse/z_gse)
+                n2_len = ny if plane == "eq" else nz
+                reg_msh_frac = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
+                reg_rbs = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
+                reg_rmp = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
+
                 for ir in range(n_regimes):
-                    r_all_mean[ir], _ = acc_regime_all[plane][ir].finalize_var(v)
-                    r_msh_mean[ir], r_msh_std[ir] = acc_regime_msh[plane][ir].finalize_var(v)
+                    ca = acc_regime_all[plane][ir].count
+                    cm = acc_regime_msh[plane][ir].count
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        reg_msh_frac[ir] = np.where(ca > 0, cm / ca, np.nan).astype(np.float32)
+                    reg_rbs[ir] = acc_regime_all[plane][ir].finalize_boundary("rbs", int(regime_step_counts[ir]))
+                    reg_rmp[ir] = acc_regime_all[plane][ir].finalize_boundary("rmp", int(regime_step_counts[ir]))
 
-                for st_s, r_arr in [("mean", r_all_mean), ("msh_mean", r_msh_mean), ("msh_std", r_msh_std)]:
+                for r_suf, r_arr in [("msh_fraction", reg_msh_frac), ("rbs_mean", reg_rbs), ("rmp_mean", reg_rmp)]:
                     vr = ds_out.createVariable(
-                        f"regime_{plane}_{v}_{st_s}", "f4", ("regime", "x_gse", dim2),
+                        f"regime_{plane}_{r_suf}", "f4", ("regime", "x_gse", dim2),
                         zlib=True, complevel=complevel, fill_value=np.nan
                     )
-                    vr.units = VAR_META[v][1]
                     vr[:] = r_arr
+
+                for v in VARS:
+                    r_all_mean = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
+                    r_msh_mean = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
+                    r_msh_std = np.full((n_regimes, nx, n2_len), np.nan, dtype=np.float32)
+                    for ir in range(n_regimes):
+                        r_all_mean[ir], _ = acc_regime_all[plane][ir].finalize_var(v)
+                        r_msh_mean[ir], r_msh_std[ir] = acc_regime_msh[plane][ir].finalize_var(v)
+
+                    for st_s, r_arr in [("mean", r_all_mean), ("msh_mean", r_msh_mean), ("msh_std", r_msh_std)]:
+                        vr = ds_out.createVariable(
+                            f"regime_{plane}_{v}_{st_s}", "f4", ("regime", "x_gse", dim2),
+                            zlib=True, complevel=complevel, fill_value=np.nan
+                        )
+                        vr.units = VAR_META[v][1]
+                        vr[:] = r_arr
 
         # 3b. Write 3D Volume Monthly & Annual Statistics (if present)
         if acc_vol_annual is not None:
@@ -675,6 +710,8 @@ def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: 
             ("subsolar_msh_vmag", "f4"),
             ("subsolar_msh_temp_k", "f4"),
         ]:
+            if ts_name not in ts_concat:
+                continue
             v_key = "ts_month" if ts_name == "month" else ts_name
             kwargs = {"zlib": True, "complevel": complevel}
             if ts_dtype == "f4":
@@ -711,11 +748,22 @@ def main():
         default=0.1,
         help="Background proton density [cm^-3] inside magnetopause (flg==0) (default: 0.1, set to negative to disable)",
     )
+    parser.add_argument(
+        "--stats-only",
+        action="store_true",
+        help="Fast mode (~1s): pool only pre-computed 3D/2D monthly stats, skipping 5-min 2D timeseries & regime composites",
+    )
     args = parser.parse_args()
 
     bg_msp = args.bg_msp_np if args.bg_msp_np >= 0.0 else None
     out_path = args.out or os.path.join("summary_stats", f"MSH_GSE_{args.year:04d}_Summary.nc")
-    build_summary(in_dir=args.in_dir, out_path=out_path, year=args.year, bg_msp_density=bg_msp)
+    build_summary(
+        in_dir=args.in_dir,
+        out_path=out_path,
+        year=args.year,
+        bg_msp_density=bg_msp,
+        stats_only=args.stats_only,
+    )
 
 
 if __name__ == "__main__":
