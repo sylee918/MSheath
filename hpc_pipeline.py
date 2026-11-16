@@ -1,13 +1,15 @@
 """
 hpc_pipeline.py
 ===============
-40-Core HPC Parallel Orchestrator for Monthly GSE 2D Magnetosheath Distributions.
+40-Core HPC Parallel Orchestrator for Monthly GSE 3D Volume & 2D Slice Magnetosheath Distributions.
 
 Features:
   - Splits annual 5-minute OMNI datasets into 12 Monthly Chunks (YYYY-MM).
-  - Assigns `workers_per_month` (default: 3 CPU workers per month, or up to 40 total cores)
+  - Assigns `workers_per_month` (default: 10 CPU workers per month across 4 concurrent months = 40 cores)
     using `concurrent.futures.ProcessPoolExecutor` to parallelize CPU-bound coordinate
-    transformations and Fortran (`libmsh.so`) 2D grid evaluations.
+    transformations and Fortran (`libmsh.so`) 3D volume grid evaluations.
+  - Accumulates exact 3D monthly statistics via streaming sums/counts and extracts 2D Equatorial/Meridional
+    time-series slices without holding 4D `(time, x, y, z)` arrays in RAM.
   - Explicitly releases memory (`del` + `gc.collect()`) after each monthly NetCDF4 write
     to prevent Out-Of-Memory (OOM) during multi-year HPC batch runs.
 """
@@ -16,14 +18,14 @@ import os
 import gc
 import time
 import argparse
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from typing import List, Optional, Tuple, Dict, Any
 import numpy as np
 import pandas as pd
 
 from omni_loader import load_and_preprocess_omni, split_by_month
 from coord_transform import verify_coordinate_transforms
-from grid_engine import GridConfig, evaluate_time_chunk, compute_monthly_statistics
+from grid_engine import GridConfig, VAR_PREFIXES, evaluate_time_chunk, compute_monthly_statistics
 from nc_writer import save_monthly_netcdf
 
 
@@ -35,13 +37,13 @@ def _worker_eval_subchunk(args: Tuple[int, pd.DataFrame, GridConfig, str]) -> Tu
 
 
 def _merge_subchunks(sub_results: List[Tuple[int, Dict[str, Any]]]) -> Dict[str, Any]:
-    """Concatenate ordered temporal sub-chunk results into a single monthly dictionary."""
+    """Concatenate ordered temporal sub-chunk results and sum 3D streaming accumulators."""
     sub_results.sort(key=lambda x: x[0])
     if len(sub_results) == 1:
         return sub_results[0][1]
 
     first = sub_results[0][1]
-    merged = {
+    merged: Dict[str, Any] = {
         "x_axis": first["x_axis"],
         "y_axis": first["y_axis"],
         "z_axis": first["z_axis"],
@@ -55,7 +57,30 @@ def _merge_subchunks(sub_results: List[Tuple[int, Dict[str, Any]]]) -> Dict[str,
     for k in time_keys:
         merged[k] = np.concatenate([r[k] for _, r in sub_results], axis=0)
 
+    vol_keys = [
+        "vol_valid_count", "vol_msh_count", "vol_bndry_count",
+        "vol_rbs_sum", "vol_rmp_sum",
+    ]
+    for v in VAR_PREFIXES:
+        vol_keys.extend([
+            f"vol_{v}_sum", f"vol_{v}_sum_sq",
+            f"vol_{v}_msh_sum", f"vol_{v}_msh_sum_sq",
+        ])
+
+    for k in vol_keys:
+        if k in first:
+            acc = first[k].copy()
+            for _, r in sub_results[1:]:
+                acc += r[k]
+            merged[k] = acc
+
     return merged
+
+
+def _drop_vol_accumulators(chunk_res: Dict[str, Any]) -> None:
+    """Release raw 3D streaming sum/count buffers once monthly stats are finalized."""
+    for k in [key for key in list(chunk_res.keys()) if key.startswith("vol_")]:
+        chunk_res.pop(k, None)
 
 
 def process_single_month(
@@ -64,7 +89,7 @@ def process_single_month(
     df_month: pd.DataFrame,
     cfg: GridConfig,
     out_dir: str,
-    workers_for_month: int = 3,
+    workers_for_month: int = 10,
     executor: Optional[ProcessPoolExecutor] = None,
     lib_path: str = "./libmsh.so",
 ) -> Dict[str, Any]:
@@ -98,8 +123,9 @@ def process_single_month(
     chunk_res = _merge_subchunks(sub_results)
     del sub_results
 
-    # Compute monthly cell statistics (Mean, Median, Std, Counts)
+    # Compute monthly cell statistics (Mean, Median, Std, Counts, 3D Volume stats)
     stats = compute_monthly_statistics(chunk_res)
+    _drop_vol_accumulators(chunk_res)
 
     # Write compressed NetCDF4 output
     nc_path = save_monthly_netcdf(
@@ -133,20 +159,32 @@ def run_annual_pipeline(
     year: int,
     months: Optional[List[int]] = None,
     total_cores: int = 40,
-    workers_per_month: int = 3,
+    workers_per_month: int = 10,
     concurrent_months: int = 4,
-    dx: float = 0.5,
+    dx: float = 1.0,
+    dy: Optional[float] = None,
+    dz: Optional[float] = None,
+    xmin: float = -10.0,
+    xmax: float = 20.0,
+    ymin: float = -25.0,
+    ymax: float = 25.0,
+    zmin: float = -15.0,
+    zmax: float = 15.0,
     out_dir: str = "output_nc",
     omni_file: Optional[str] = None,
     max_steps_per_month: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Execute the full HPC pipeline for a given year (or selected months).
+    Execute the full 3D HPC pipeline for a given year (or selected months).
     """
+    eff_dy = dx if dy is None else dy
+    eff_dz = dx if dz is None else dz
+
     t_start = time.perf_counter()
     print("=" * 78)
-    print(f"[HPC GSE MSheath Pipeline] Year={year} | Total Cores={total_cores} | "
-          f"Workers/Month={workers_per_month} | Concurrent Months={concurrent_months} | Bin={dx} Re")
+    print(f"[HPC GSE 3D MSheath Pipeline] Year={year} | Total Cores={total_cores} | "
+          f"Workers/Month={workers_per_month} | Concurrent Months={concurrent_months} | "
+          f"Grid=({xmin}..{xmax}:{dx}, {ymin}..{ymax}:{eff_dy}, {zmin}..{zmax}:{eff_dz}) Re")
     print("=" * 78)
 
     # Step 1: Load and preprocess 5-minute OMNI data
@@ -175,7 +213,12 @@ def run_annual_pipeline(
     gc.collect()
 
     target_months = sorted(months) if months else sorted(monthly_dfs.keys())
-    cfg = GridConfig(dx=dx, dy=dx, dz=dx, skip_meridional_nightside=True)
+    cfg = GridConfig(
+        xmin=xmin, xmax=xmax, dx=dx,
+        ymin=ymin, ymax=ymax, dy=eff_dy,
+        zmin=zmin, zmax=zmax, dz=eff_dz,
+        skip_meridional_nightside=True,
+    )
 
     # Step 3 & 4: Execute monthly chunks in parallel waves across the shared ProcessPool
     results_summary = []
@@ -206,7 +249,7 @@ def run_annual_pipeline(
                     for idx, idxs in enumerate(indices)
                     if len(idxs) > 0
                 ]
-                wave_futures[m] = ( time.perf_counter(), df_m, sub_futs )
+                wave_futures[m] = (time.perf_counter(), df_m, sub_futs)
 
             # Collect each month in the wave, compute stats, write NetCDF, and release RAM
             for m, (t_m0, df_m, sub_futs) in wave_futures.items():
@@ -215,6 +258,8 @@ def run_annual_pipeline(
                 del sub_res
 
                 stats = compute_monthly_statistics(chunk_res)
+                _drop_vol_accumulators(chunk_res)
+
                 nc_path = save_monthly_netcdf(
                     year=year,
                     month=m,
@@ -252,7 +297,7 @@ def run_annual_pipeline(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="40-Core HPC GSE Magnetosheath 2D Distribution Pipeline"
+        description="40-Core HPC GSE Magnetosheath 3D Volume & 2D Slice Pipeline"
     )
     parser.add_argument("--year", type=int, default=2018, help="Target OMNI year (e.g., 2018)")
     parser.add_argument(
@@ -268,8 +313,8 @@ def main():
     parser.add_argument(
         "--workers-per-month",
         type=int,
-        default=3,
-        help="Workers allocated per monthly task (default: 3)",
+        default=10,
+        help="Workers allocated per monthly task (default: 10)",
     )
     parser.add_argument(
         "--concurrent-months",
@@ -278,8 +323,20 @@ def main():
         help="Number of months evaluated simultaneously per wave (default: 4)",
     )
     parser.add_argument(
-        "--dx", type=float, default=0.5, help="Spatial grid resolution in R_E (default: 0.5)"
+        "--dx", type=float, default=1.0, help="Spatial X grid resolution in R_E (default: 1.0)"
     )
+    parser.add_argument(
+        "--dy", type=float, default=None, help="Spatial Y grid resolution in R_E (default: same as dx)"
+    )
+    parser.add_argument(
+        "--dz", type=float, default=None, help="Spatial Z grid resolution in R_E (default: same as dx)"
+    )
+    parser.add_argument("--xmin", type=float, default=-10.0, help="Minimum X_GSE in R_E (default: -10.0)")
+    parser.add_argument("--xmax", type=float, default=20.0, help="Maximum X_GSE in R_E (default: 20.0)")
+    parser.add_argument("--ymin", type=float, default=-25.0, help="Minimum Y_GSE in R_E (default: -25.0)")
+    parser.add_argument("--ymax", type=float, default=25.0, help="Maximum Y_GSE in R_E (default: 25.0)")
+    parser.add_argument("--zmin", type=float, default=-15.0, help="Minimum Z_GSE in R_E (default: -15.0)")
+    parser.add_argument("--zmax", type=float, default=15.0, help="Maximum Z_GSE in R_E (default: 15.0)")
     parser.add_argument(
         "--out-dir", type=str, default="output_nc", help="Output directory for NetCDF4 files"
     )
@@ -301,6 +358,14 @@ def main():
         workers_per_month=args.workers_per_month,
         concurrent_months=args.concurrent_months,
         dx=args.dx,
+        dy=args.dy,
+        dz=args.dz,
+        xmin=args.xmin,
+        xmax=args.xmax,
+        ymin=args.ymin,
+        ymax=args.ymax,
+        zmin=args.zmin,
+        zmax=args.zmax,
         out_dir=args.out_dir,
         omni_file=args.omni_file,
         max_steps_per_month=args.max_steps,

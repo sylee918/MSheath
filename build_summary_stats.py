@@ -126,6 +126,92 @@ class StreamingAccumulator2D:
         return out
 
 
+class PooledVolumeAccumulator3D:
+    """Pools monthly 3D volume summary statistics (count, mean, std) into exact annual 3D maps."""
+
+    def __init__(self, shape: Tuple[int, int, int]):
+        self.shape = shape
+        self.valid_count = np.zeros(shape, dtype=np.int64)
+        self.msh_count = np.zeros(shape, dtype=np.int64)
+        self.bndry_count = {"rbs": np.zeros(shape, dtype=np.int64), "rmp": np.zeros(shape, dtype=np.int64)}
+        self.sum_bndry = {"rbs": np.zeros(shape, dtype=np.float64), "rmp": np.zeros(shape, dtype=np.float64)}
+        self.sum_all = {v: np.zeros(shape, dtype=np.float64) for v in VARS}
+        self.sumsq_all = {v: np.zeros(shape, dtype=np.float64) for v in VARS}
+        self.sum_msh = {v: np.zeros(shape, dtype=np.float64) for v in VARS}
+        self.sumsq_msh = {v: np.zeros(shape, dtype=np.float64) for v in VARS}
+
+    def update(self, ds: nc.Dataset, n_valid_m: int) -> Dict[str, np.ndarray]:
+        vc = np.array(ds.variables["vol_valid_count"][:], dtype=np.int32)
+        mc = np.array(ds.variables["vol_msh_count"][:], dtype=np.int32)
+        vc64 = vc.astype(np.int64)
+        mc64 = mc.astype(np.int64)
+        self.valid_count += vc64
+        self.msh_count += mc64
+
+        month_slice: Dict[str, np.ndarray] = {
+            "vol_valid_count": vc,
+            "vol_msh_count": mc,
+            "vol_msh_fraction": np.array(ds.variables["vol_msh_fraction"][:], dtype=np.float32),
+        }
+
+        for b in ["rbs", "rmp"]:
+            bm = np.array(ds.variables[f"vol_{b}_mean"][:], dtype=np.float32)
+            month_slice[f"vol_{b}_mean"] = bm
+            ok_b = np.isfinite(bm) & (n_valid_m > 0)
+            self.bndry_count[b] += np.where(ok_b, n_valid_m, 0)
+            self.sum_bndry[b] += np.where(ok_b, bm.astype(np.float64) * n_valid_m, 0.0)
+
+        for v in VARS:
+            for st, cnt64, s_dict, sq_dict in [
+                ("", vc64, self.sum_all, self.sumsq_all),
+                ("msh_", mc64, self.sum_msh, self.sumsq_msh),
+            ]:
+                mean_arr = np.array(ds.variables[f"vol_{v}_{st}mean"][:], dtype=np.float32)
+                std_arr = np.array(ds.variables[f"vol_{v}_{st}std"][:], dtype=np.float32)
+                month_slice[f"vol_{v}_{st}mean"] = mean_arr
+                month_slice[f"vol_{v}_{st}std"] = std_arr
+
+                m64 = mean_arr.astype(np.float64)
+                s64 = std_arr.astype(np.float64)
+                ok = (cnt64 > 0) & np.isfinite(m64) & np.isfinite(s64)
+                s_dict[v] += np.where(ok, cnt64 * m64, 0.0)
+                sq_dict[v] += np.where(ok, cnt64 * (s64 * s64 + m64 * m64), 0.0)
+
+        return month_slice
+
+    def finalize(self) -> Dict[str, np.ndarray]:
+        out: Dict[str, np.ndarray] = {
+            "vol_valid_count": self.valid_count.astype(np.int32),
+            "vol_msh_count": self.msh_count.astype(np.int32),
+        }
+        denom_vc = np.maximum(self.valid_count, 1).astype(np.float64)
+        denom_mc = np.maximum(self.msh_count, 1).astype(np.float64)
+        out["vol_msh_fraction"] = np.where(
+            self.valid_count > 0, self.msh_count.astype(np.float64) / denom_vc, np.nan
+        ).astype(np.float32)
+
+        for b in ["rbs", "rmp"]:
+            bc = self.bndry_count[b]
+            denom_b = np.maximum(bc, 1).astype(np.float64)
+            out[f"vol_{b}_mean"] = np.where(bc > 0, self.sum_bndry[b] / denom_b, np.nan).astype(np.float32)
+
+        for v in VARS:
+            for st, cnt, denom, s_dict, sq_dict in [
+                ("", self.valid_count, denom_vc, self.sum_all, self.sumsq_all),
+                ("msh_", self.msh_count, denom_mc, self.sum_msh, self.sumsq_msh),
+            ]:
+                mean_arr = s_dict[v] / denom
+                var_arr = np.maximum(0.0, (sq_dict[v] / denom) - mean_arr * mean_arr)
+                std_arr = np.sqrt(var_arr)
+                invalid = cnt == 0
+                mean_arr[invalid] = np.nan
+                std_arr[invalid] = np.nan
+                out[f"vol_{v}_{st}mean"] = mean_arr.astype(np.float32)
+                out[f"vol_{v}_{st}std"] = std_arr.astype(np.float32)
+
+        return out
+
+
 def find_monthly_files(in_dir: str, year: int) -> Dict[int, str]:
     found = {}
     for m in range(1, 13):
@@ -153,10 +239,12 @@ def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: 
         x_gse = np.array(ds0.variables["x_gse"][:], dtype=np.float32)
         y_gse = np.array(ds0.variables["y_gse"][:], dtype=np.float32)
         z_gse = np.array(ds0.variables["z_gse"][:], dtype=np.float32)
+        has_vol = "vol_valid_count" in ds0.variables
 
     nx, ny, nz = len(x_gse), len(y_gse), len(z_gse)
     eq_shape = (nx, ny)
     mer_shape = (nx, nz)
+    vol_shape = (nx, ny, nz)
     n_regimes = len(REGIME_NAMES)
 
     # Find indices for Subsolar Nose line (Y_GSE == 0, X_GSE >= 0)
@@ -176,6 +264,20 @@ def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: 
         for v in VARS:
             for st in ["mean", "median", "std", "msh_mean", "msh_std"]:
                 m_data[f"{plane}_{v}_{st}"] = np.full((12, nx, n2), np.nan, dtype=np.float32)
+
+    # Allocate Monthly 3D volume arrays & annual accumulator if 3D volume stats are present
+    m_vol: Dict[str, np.ndarray] = {}
+    acc_vol_annual: Optional[PooledVolumeAccumulator3D] = None
+    if has_vol:
+        m_vol["vol_valid_count"] = np.zeros((12,) + vol_shape, dtype=np.int32)
+        m_vol["vol_msh_count"] = np.zeros((12,) + vol_shape, dtype=np.int32)
+        m_vol["vol_msh_fraction"] = np.full((12,) + vol_shape, np.nan, dtype=np.float32)
+        m_vol["vol_rbs_mean"] = np.full((12,) + vol_shape, np.nan, dtype=np.float32)
+        m_vol["vol_rmp_mean"] = np.full((12,) + vol_shape, np.nan, dtype=np.float32)
+        for v in VARS:
+            for st in ["mean", "std", "msh_mean", "msh_std"]:
+                m_vol[f"vol_{v}_{st}"] = np.full((12,) + vol_shape, np.nan, dtype=np.float32)
+        acc_vol_annual = PooledVolumeAccumulator3D(vol_shape)
 
     # Streaming accumulators for Annual (All-Valid & MSH-Only) and 8 Regimes (All-Valid & MSH-Only)
     acc_annual_all = {"eq": StreamingAccumulator2D(eq_shape), "mer": StreamingAccumulator2D(mer_shape)}
@@ -358,6 +460,11 @@ def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: 
                     ts_lists["subsolar_msh_vmag"].append(sub_vm)
                     ts_lists["subsolar_msh_temp_k"].append(sub_tk)
 
+            if acc_vol_annual is not None and "vol_valid_count" in ds.variables:
+                month_vol = acc_vol_annual.update(ds, n_valid_m)
+                for vk, varr in month_vol.items():
+                    m_vol[vk][m_idx] = varr
+
         print(f"  [Month {year:04d}-{m:02d}] Processed {nt:,} steps (valid={n_valid_m:,}) in {time.perf_counter()-tm0:.2f}s")
 
     # Concatenate 1D time series
@@ -514,6 +621,34 @@ def build_summary(in_dir: str, out_path: str, year: int = 2018, bg_msp_density: 
                     )
                     vr.units = VAR_META[v][1]
                     vr[:] = r_arr
+
+        # 3b. Write 3D Volume Monthly & Annual Statistics (if present)
+        if acc_vol_annual is not None:
+            ann_vol = acc_vol_annual.finalize()
+            vol_specs = [
+                ("vol_valid_count", "i4", None),
+                ("vol_msh_count", "i4", None),
+                ("vol_msh_fraction", "f4", "1"),
+                ("vol_rbs_mean", "f4", "R_E"),
+                ("vol_rmp_mean", "f4", "R_E"),
+            ]
+            for v in VARS:
+                unit = VAR_META[v][1]
+                for st in ["mean", "std", "msh_mean", "msh_std"]:
+                    vol_specs.append((f"vol_{v}_{st}", "f4", unit))
+
+            for vkey, dtype, unit in vol_specs:
+                for prefix, dims, src_dict in [
+                    ("monthly", ("month", "x_gse", "y_gse", "z_gse"), m_vol),
+                    ("annual", ("x_gse", "y_gse", "z_gse"), ann_vol),
+                ]:
+                    kwargs = {"zlib": True, "complevel": complevel}
+                    if dtype == "f4":
+                        kwargs["fill_value"] = np.nan
+                    vv = ds_out.createVariable(f"{prefix}_{vkey}", dtype, dims, **kwargs)
+                    if unit is not None:
+                        vv.units = unit
+                    vv[:] = src_dict[vkey]
 
         # 4. Write 1D Full-Year Time Series (time,)
         v_t = ds_out.createVariable("time", "i8", ("time",), zlib=True, complevel=complevel)

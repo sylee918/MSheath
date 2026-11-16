@@ -1,9 +1,10 @@
 """
 nc_writer.py
 ============
-CF-1.8 Compliant NetCDF4 (.nc) Writer for Monthly GSE 2D Magnetosheath Distributions.
-Stores both 5-minute time-resolved 2D distributions and monthly cell-level statistics
-(Mean, Median, Std, Valid Count) with zlib compression.
+CF-1.8 Compliant NetCDF4 (.nc) Writer for Monthly GSE 3D Volume & 2D Slice Magnetosheath Distributions.
+Stores 5-minute time-resolved 2D slices (Equatorial Z=0, Meridional Y=0), monthly 2D statistics,
+and monthly 3D volume summary statistics (Mean, Std, MSH-Only Mean/Std, Counts, Fraction, Boundaries)
+with zlib compression.
 """
 
 import os
@@ -35,7 +36,7 @@ def save_monthly_netcdf(
     out_dir: str = "output_nc",
     complevel: int = 4,
 ) -> str:
-    """Write monthly GSE 2D distributions and aggregated statistics to a compressed NetCDF4 file."""
+    """Write monthly GSE 3D volume statistics and 2D slice distributions to a compressed NetCDF4 file."""
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"MSH_GSE_{year:04d}-{month:02d}.nc")
 
@@ -45,11 +46,14 @@ def save_monthly_netcdf(
     unix_time = chunk_res["unix_time"]
 
     nt, nx, ny, nz = len(unix_time), len(x_axis), len(y_axis), len(z_axis)
+    dx_val = float(x_axis[1] - x_axis[0]) if nx > 1 else 1.0
+    dy_val = float(y_axis[1] - y_axis[0]) if ny > 1 else 1.0
+    dz_val = float(z_axis[1] - z_axis[0]) if nz > 1 else 1.0
 
     with nc.Dataset(out_path, mode="w", format="NETCDF4") as ds:
         # 1. Global Attributes
         ds.title = (
-            f"Tsyganenko (2024, 2025) Empirical Magnetosheath 2D Distributions in GSE "
+            f"Tsyganenko (2024, 2025) Empirical Magnetosheath 3D Volume & 2D Slice Distributions in GSE "
             f"({year:04d}-{month:02d})"
         )
         ds.coordinate_system = "GSE (Geocentric Solar Ecliptic)"
@@ -64,9 +68,10 @@ def save_monthly_netcdf(
         ds.grid_x_range_Re = f"[{float(x_axis[0]):.2f}, {float(x_axis[-1]):.2f}]"
         ds.grid_y_range_Re = f"[{float(y_axis[0]):.2f}, {float(y_axis[-1]):.2f}]"
         ds.grid_z_range_Re = f"[{float(z_axis[0]):.2f}, {float(z_axis[-1]):.2f}]"
-        ds.grid_bin_size_Re = float(x_axis[1] - x_axis[0]) if nx > 1 else 0.5
+        ds.grid_bin_size_Re = dx_val
+        ds.grid_bin_sizes_Re = f"dx={dx_val:.2f}, dy={dy_val:.2f}, dz={dz_val:.2f}"
         ds.meridional_nightside_policy = "X_GSE < 0 skipped and masked (_FillValue=NaN, flag=-1)"
-        ds.history = f"Created on {datetime.now(timezone.utc).isoformat()} by HPC GSE MSheath Pipeline"
+        ds.history = f"Created on {datetime.now(timezone.utc).isoformat()} by HPC GSE 3D MSheath Pipeline"
 
         # 2. Dimensions
         ds.createDimension("time", nt)
@@ -87,12 +92,12 @@ def save_monthly_netcdf(
         v_x[:] = x_axis
 
         v_y = ds.createVariable("y_gse", "f4", ("y_gse",))
-        v_y.long_name = "GSE Y Coordinate (Equatorial Plane Z_GSE = 0)"
+        v_y.long_name = "GSE Y Coordinate"
         v_y.units = "R_E"
         v_y[:] = y_axis
 
         v_z = ds.createVariable("z_gse", "f4", ("z_gse",))
-        v_z.long_name = "GSE Z Coordinate (Meridional Plane Y_GSE = 0)"
+        v_z.long_name = "GSE Z Coordinate"
         v_z.units = "R_E"
         v_z[:] = z_axis
 
@@ -187,5 +192,73 @@ def save_monthly_netcdf(
                     vs.long_name = f"Monthly {stat_name.capitalize()} of {desc} on {plane_desc}"
                     vs.units = unit
                     vs[:] = stats[f"{plane}_{vkey}_{stat_name}"]
+
+        # 7. Monthly 3D Volume Summary Statistics (x_gse, y_gse, z_gse)
+        if "vol_valid_count" in stats:
+            dims_3d = ("x_gse", "y_gse", "z_gse")
+            for c_type, c_desc in [
+                ("valid_count", "Total Valid Evaluated Timesteps in 3D Volume"),
+                ("msh_count", "Total Timesteps Located Inside Magnetosheath (flag==1) in 3D Volume"),
+            ]:
+                vc3 = ds.createVariable(
+                    f"vol_{c_type}",
+                    "i4",
+                    dims_3d,
+                    zlib=True,
+                    complevel=complevel,
+                )
+                vc3.long_name = c_desc
+                vc3.units = "count"
+                vc3.coordinates = "x_gse y_gse z_gse"
+                vc3[:] = stats[f"vol_{c_type}"]
+
+            vf3 = ds.createVariable(
+                "vol_msh_fraction",
+                "f4",
+                dims_3d,
+                zlib=True,
+                complevel=complevel,
+                fill_value=np.nan,
+            )
+            vf3.long_name = "Monthly Magnetosheath Occupancy Fraction (msh_count / valid_count) in 3D Volume"
+            vf3.units = "1"
+            vf3.coordinates = "x_gse y_gse z_gse"
+            vf3[:] = stats["vol_msh_fraction"]
+
+            for bkey in ["rbs", "rmp"]:
+                bdesc, bunit = VAR_META[bkey]
+                vb3 = ds.createVariable(
+                    f"vol_{bkey}_mean",
+                    "f4",
+                    dims_3d,
+                    zlib=True,
+                    complevel=complevel,
+                    fill_value=np.nan,
+                )
+                vb3.long_name = f"Monthly Mean of {bdesc} in 3D Volume"
+                vb3.units = bunit
+                vb3.coordinates = "x_gse y_gse z_gse"
+                vb3[:] = stats[f"vol_{bkey}_mean"]
+
+            for vkey in ["np", "temp_k", "vx_gse", "vy_gse", "vz_gse", "vmag"]:
+                desc, unit = VAR_META[vkey]
+                for stat_name, stat_desc in [
+                    ("mean", "Monthly Mean (All Valid)"),
+                    ("std", "Monthly Std Dev (All Valid)"),
+                    ("msh_mean", "Monthly Mean (Magnetosheath Only, flag==1)"),
+                    ("msh_std", "Monthly Std Dev (Magnetosheath Only, flag==1)"),
+                ]:
+                    vs3 = ds.createVariable(
+                        f"vol_{vkey}_{stat_name}",
+                        "f4",
+                        dims_3d,
+                        zlib=True,
+                        complevel=complevel,
+                        fill_value=np.nan,
+                    )
+                    vs3.long_name = f"{stat_desc} of {desc} in 3D Volume"
+                    vs3.units = unit
+                    vs3.coordinates = "x_gse y_gse z_gse"
+                    vs3[:] = stats[f"vol_{vkey}_{stat_name}"]
 
     return out_path

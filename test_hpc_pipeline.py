@@ -113,7 +113,13 @@ def test_3_end_to_end_pipeline():
         total_cores=8,
         workers_per_month=8,
         concurrent_months=1,
-        dx=0.5,
+        dx=1.0,
+        xmin=-10.0,
+        xmax=20.0,
+        ymin=-25.0,
+        ymax=25.0,
+        zmin=-15.0,
+        zmax=15.0,
         out_dir="test_nc",
         omni_file=omni_src,
         max_steps_per_month=288,  # 24 hours (288 x 5-min steps) benchmark
@@ -128,6 +134,8 @@ def test_3_end_to_end_pipeline():
               f"{ {k: len(v) for k, v in ds.dimensions.items()} }")
 
         x_gse = np.ma.filled(ds.variables["x_gse"][:], np.nan)
+        y_gse = np.ma.filled(ds.variables["y_gse"][:], np.nan)
+        z_gse = np.ma.filled(ds.variables["z_gse"][:], np.nan)
         mer_np = np.ma.filled(ds.variables["mer_np"][:], np.nan)
         mer_flg = np.ma.filled(ds.variables["mer_region_flag"][:], -99)
         eq_np_mean = np.ma.filled(ds.variables["eq_np_mean"][:], np.nan)
@@ -142,9 +150,34 @@ def test_3_end_to_end_pipeline():
         print(f"  Equatorial peak monthly mean Np: {np.nanmax(eq_np_mean):.2f} cm^-3, "
               f"median Np: {np.nanmax(eq_np_med):.2f} cm^-3, max valid count: {np.max(eq_cnt)}")
 
+        # Verify 3D Volume statistics variables
+        expected_shape = (len(x_gse), len(y_gse), len(z_gse))
+        for vname in [
+            "vol_valid_count", "vol_msh_count", "vol_msh_fraction",
+            "vol_rbs_mean", "vol_rmp_mean",
+            "vol_np_mean", "vol_np_std", "vol_np_msh_mean", "vol_np_msh_std",
+        ]:
+            assert vname in ds.variables, f"Missing 3D volume variable: {vname}"
+            assert ds.variables[vname].shape == expected_shape, (
+                f"{vname} shape {ds.variables[vname].shape} != {expected_shape}"
+            )
+
+        vol_vc = np.ma.filled(ds.variables["vol_valid_count"][:], 0)
+        vol_mc = np.ma.filled(ds.variables["vol_msh_count"][:], 0)
+        vol_np_mean = np.ma.filled(ds.variables["vol_np_mean"][:], np.nan)
+        vol_np_msh_mean = np.ma.filled(ds.variables["vol_np_msh_mean"][:], np.nan)
+        iz0 = int(np.argmin(np.abs(z_gse - 0.0)))
+        assert np.array_equal(vol_vc[:, :, iz0], eq_cnt), "3D z=0 valid_count must match eq_valid_count!"
+        assert np.allclose(vol_np_mean[:, :, iz0], eq_np_mean, equal_nan=True, rtol=1e-4, atol=1e-4), (
+            "3D z=0 mean Np must match eq_np_mean!"
+        )
+        assert np.any(vol_mc > 0), "3D volume must contain magnetosheath points!"
+        print(f"  3D Volume verified {expected_shape}: max MSH count={np.max(vol_mc)}, "
+              f"peak MSH mean Np={np.nanmax(vol_np_msh_mean):.2f} cm^-3")
+
     steps_per_sec = 288.0 / elapsed
-    est_year_40core_min = (105120.0 / (steps_per_sec * (40.0 / 12.0))) / 60.0
-    print(f"  Throughput (12 workers): {steps_per_sec:.1f} steps/sec "
+    est_year_40core_min = (105120.0 / (steps_per_sec * (40.0 / 8.0))) / 60.0
+    print(f"  Throughput (8 workers): {steps_per_sec:.1f} steps/sec "
           f"-> Projected 1-year (105,120 steps) on 40 cores: ~{est_year_40core_min:.1f} minutes!")
 
 

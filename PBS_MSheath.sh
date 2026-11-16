@@ -60,16 +60,19 @@ echo "Target Year: ${TARGET_YEAR} | Total Cores: ${TOTAL_CORES}"
 echo "Start Time: $(date -u)"
 echo "=================================================================="
 
-# Step 3: Run 40-Core HPC GSE Magnetosheath Pipeline
+# Step 3: Run 40-Core HPC GSE 3D Magnetosheath Pipeline
 # - 12 Monthly Chunks (YYYY-01 to YYYY-12)
-# - 4 Concurrent Months in parallel wave, ~10 workers per month across 40 cores
-# - 0.5 Re grid resolution
+# - 4 Concurrent Months in parallel wave, 10 workers per month across 40 cores
+# - 3D Volume Grid: X=[-10, 20], Y=[-25, 25], Z=[-15, 15] Re at 1.0 Re resolution
 python3 hpc_pipeline.py \
     --year "${TARGET_YEAR}" \
     --total-cores "${TOTAL_CORES}" \
-    --workers-per-month 3 \
+    --workers-per-month 10 \
     --concurrent-months 4 \
-    --dx 0.5 \
+    --dx 1.0 \
+    --xmin -10.0 --xmax 20.0 \
+    --ymin -25.0 --ymax 25.0 \
+    --zmin -15.0 --zmax 15.0 \
     --out-dir "output_nc"
 
 echo "=================================================================="

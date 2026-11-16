@@ -1,9 +1,10 @@
 """
 grid_engine.py
 ==============
-In-Memory Fortran (`libmsh.so`) Grid Evaluation & Monthly Statistical Aggregation Engine.
-Evaluates GSE Equatorial (X-Y, Z_GSE=0) and GSE Meridional (X-Z, Y_GSE=0, skipping X_GSE < 0)
-2D distributions at 5-minute cadence and computes monthly cell statistics (mean, median, std, count).
+In-Memory Fortran (`libmsh.so`) 3D Volume Grid Evaluation & Monthly Statistical Aggregation Engine.
+Evaluates the full 3D GSE magnetosheath volume (x_gse, y_gse, z_gse) at 5-minute cadence using
+streaming 3D statistical accumulators, while extracting GSE Equatorial (X-Y, Z_GSE=0) and
+GSE Meridional (X-Z, Y_GSE=0, skipping X_GSE < 0) 2D time-series slices at zero extra Fortran cost.
 """
 
 import os
@@ -15,18 +16,20 @@ import pandas as pd
 
 from coord_transform import compute_epoch_rotations, gse_to_gsm_coords, gsm_to_gse_vector
 
+VAR_PREFIXES = ["np", "temp_k", "vx_gse", "vy_gse", "vz_gse", "vmag"]
+
 
 @dataclass
 class GridConfig:
     xmin: float = -10.0
     xmax: float = 20.0
-    dx: float = 0.5
-    ymin: float = -30.0
-    ymax: float = 30.0
-    dy: float = 0.5
-    zmin: float = -30.0
-    zmax: float = 30.0
-    dz: float = 0.5
+    dx: float = 1.0
+    ymin: float = -25.0
+    ymax: float = 25.0
+    dy: float = 1.0
+    zmin: float = -15.0
+    zmax: float = 15.0
+    dz: float = 1.0
     skip_meridional_nightside: bool = True
 
 
@@ -64,8 +67,9 @@ def evaluate_time_chunk(
     lib_path: str = "./libmsh.so",
 ) -> Dict[str, Any]:
     """
-    Evaluate GSE Equatorial and Meridional 2D distributions for a chunk of 5-min OMNI records.
-    For the Meridional plane, X_GSE < 0 points are completely skipped during Fortran evaluation.
+    Evaluate the full 3D GSE grid for a chunk of 5-min OMNI records, accumulating
+    exact 3D streaming statistics in RAM while extracting Equatorial (Z_GSE=0) and
+    Meridional (Y_GSE=0, skipping X_GSE < 0 if configured) 2D time-series slices.
     """
     lib = get_msh_lib(lib_path)
     p_f64 = ctypes.POINTER(ctypes.c_double)
@@ -77,35 +81,30 @@ def evaluate_time_chunk(
 
     nx, ny, nz = len(x_axis), len(y_axis), len(z_axis)
     nt = len(df_chunk)
+    shape_3d = (nx, ny, nz)
 
-    # 1. Equatorial GSE grid (Z_GSE = 0): full X in [-10, 20], Y in [-30, 30]
-    eq_X2d, eq_Y2d = np.meshgrid(x_axis, y_axis, indexing="ij")
-    eq_x_flat = eq_X2d.ravel()
-    eq_y_flat = eq_Y2d.ravel()
-    eq_z_flat = np.zeros_like(eq_x_flat)
-    n_eq = len(eq_x_flat)
+    # Full 3D GSE grid
+    X3d, Y3d, Z3d = np.meshgrid(x_axis, y_axis, z_axis, indexing="ij")
+    x_flat = np.ascontiguousarray(X3d.ravel(), dtype=np.float64)
+    y_flat = np.ascontiguousarray(Y3d.ravel(), dtype=np.float64)
+    z_flat = np.ascontiguousarray(Z3d.ravel(), dtype=np.float64)
+    n_3d = len(x_flat)
 
-    # 2. Meridional GSE grid (Y_GSE = 0): only evaluate X_GSE >= 0 if skip_meridional_nightside=True
+    # 2D slice indices (Equatorial Z_GSE=0, Meridional Y_GSE=0)
+    iz0 = int(np.argmin(np.abs(z_axis - 0.0)))
+    iy0 = int(np.argmin(np.abs(y_axis - 0.0)))
+
     if cfg.skip_meridional_nightside:
         ix_pos = np.where(x_axis >= -1e-9)[0]
-        x_mer_eval = x_axis[ix_pos]
-        ix_start = int(ix_pos[0])
+        ix_start = int(ix_pos[0]) if len(ix_pos) > 0 else nx
     else:
-        x_mer_eval = x_axis
         ix_start = 0
 
-    mer_X2d, mer_Z2d = np.meshgrid(x_mer_eval, z_axis, indexing="ij")
-    mer_x_flat = mer_X2d.ravel()
-    mer_y_flat = np.zeros_like(mer_x_flat)
-    mer_z_flat = mer_Z2d.ravel()
-    n_mer_eval = len(mer_x_flat)
-    nx_mer_eval = len(x_mer_eval)
-
-    # Preallocate output 3D arrays (float32 to save 50% RAM)
+    # Preallocate 2D time-resolved slice arrays (float32 to save 50% RAM)
     shape_eq = (nt, nx, ny)
     shape_mer = (nt, nx, nz)
 
-    out = {
+    out: Dict[str, Any] = {
         "x_axis": x_axis.astype(np.float32),
         "y_axis": y_axis.astype(np.float32),
         "z_axis": z_axis.astype(np.float32),
@@ -129,31 +128,33 @@ def evaluate_time_chunk(
         "mer_rbs": np.full(shape_mer, np.nan, dtype=np.float32),
         "mer_rmp": np.full(shape_mer, np.nan, dtype=np.float32),
         "mer_flag": np.full(shape_mer, -1, dtype=np.int8),  # -1 = masked nightside X < 0
+        # 3D streaming accumulators (kept in float64/int32 without storing 4D time arrays)
+        "vol_valid_count": np.zeros(shape_3d, dtype=np.int32),
+        "vol_msh_count": np.zeros(shape_3d, dtype=np.int32),
+        "vol_bndry_count": np.zeros(shape_3d, dtype=np.int32),
+        "vol_rbs_sum": np.zeros(shape_3d, dtype=np.float64),
+        "vol_rmp_sum": np.zeros(shape_3d, dtype=np.float64),
     }
+    for v in VAR_PREFIXES:
+        out[f"vol_{v}_sum"] = np.zeros(shape_3d, dtype=np.float64)
+        out[f"vol_{v}_sum_sq"] = np.zeros(shape_3d, dtype=np.float64)
+        out[f"vol_{v}_msh_sum"] = np.zeros(shape_3d, dtype=np.float64)
+        out[f"vol_{v}_msh_sum_sq"] = np.zeros(shape_3d, dtype=np.float64)
 
     # Precompute dipole tilt and GSE<->GSM rotation angles for all timestamps in chunk
     psi_deg, cos_a, sin_a = compute_epoch_rotations(out["unix_time"])
     out["psi_deg"] = psi_deg.astype(np.float32)
     out["gsm_gse_angle_deg"] = np.degrees(np.arctan2(sin_a, cos_a)).astype(np.float32)
 
-    # Reusable work buffers for Fortran call
-    den_eq = np.empty(n_eq, dtype=np.float64)
-    tk_eq = np.empty(n_eq, dtype=np.float64)
-    vx_eq = np.empty(n_eq, dtype=np.float64)
-    vy_eq = np.empty(n_eq, dtype=np.float64)
-    vz_eq = np.empty(n_eq, dtype=np.float64)
-    rbs_eq = np.empty(n_eq, dtype=np.float64)
-    rmp_eq = np.empty(n_eq, dtype=np.float64)
-    flg_eq = np.empty(n_eq, dtype=np.int32)
-
-    den_mer = np.empty(n_mer_eval, dtype=np.float64)
-    tk_mer = np.empty(n_mer_eval, dtype=np.float64)
-    vx_mer = np.empty(n_mer_eval, dtype=np.float64)
-    vy_mer = np.empty(n_mer_eval, dtype=np.float64)
-    vz_mer = np.empty(n_mer_eval, dtype=np.float64)
-    rbs_mer = np.empty(n_mer_eval, dtype=np.float64)
-    rmp_mer = np.empty(n_mer_eval, dtype=np.float64)
-    flg_mer = np.empty(n_mer_eval, dtype=np.int32)
+    # Reusable work buffers for single 3D Fortran call per timestep
+    den_3d = np.empty(n_3d, dtype=np.float64)
+    tk_3d = np.empty(n_3d, dtype=np.float64)
+    vx_3d = np.empty(n_3d, dtype=np.float64)
+    vy_3d = np.empty(n_3d, dtype=np.float64)
+    vz_3d = np.empty(n_3d, dtype=np.float64)
+    rbs_3d = np.empty(n_3d, dtype=np.float64)
+    rmp_3d = np.empty(n_3d, dtype=np.float64)
+    flg_3d = np.empty(n_3d, dtype=np.int32)
 
     vsw_arr = df_chunk["vsw"].to_numpy(dtype=np.float64)
     dsw_arr = df_chunk["np"].to_numpy(dtype=np.float64)
@@ -180,74 +181,82 @@ def evaluate_time_chunk(
         v_cap = max(vsw * 1.35, 480.0)
         n_min_msh = 0.25 * dsw
 
-        # --- (A) Equatorial Plane (Z_GSE = 0) ---
-        xg, yg, zg = gse_to_gsm_coords(eq_x_flat, eq_y_flat, eq_z_flat, c_ang, s_ang)
+        # --- Full 3D Volume Evaluation ---
+        xg, yg, zg = gse_to_gsm_coords(x_flat, y_flat, z_flat, c_ang, s_ang)
         lib.msh_eval_batch(
-            n_eq,
+            n_3d,
             xg.ctypes.data_as(p_f64),
             yg.ctypes.data_as(p_f64),
             zg.ctypes.data_as(p_f64),
             vsw, dsw, wsw, bx, by, bz, psid,
-            den_eq.ctypes.data_as(p_f64),
-            tk_eq.ctypes.data_as(p_f64),
-            vx_eq.ctypes.data_as(p_f64),
-            vy_eq.ctypes.data_as(p_f64),
-            vz_eq.ctypes.data_as(p_f64),
-            rbs_eq.ctypes.data_as(p_f64),
-            rmp_eq.ctypes.data_as(p_f64),
-            flg_eq.ctypes.data_as(p_i32),
+            den_3d.ctypes.data_as(p_f64),
+            tk_3d.ctypes.data_as(p_f64),
+            vx_3d.ctypes.data_as(p_f64),
+            vy_3d.ctypes.data_as(p_f64),
+            vz_3d.ctypes.data_as(p_f64),
+            rbs_3d.ctypes.data_as(p_f64),
+            rmp_3d.ctypes.data_as(p_f64),
+            flg_3d.ctypes.data_as(p_i32),
         )
-        vx_gse_eq, vy_gse_eq, vz_gse_eq = gsm_to_gse_vector(vx_eq, vy_eq, vz_eq, c_ang, s_ang)
-        vmag_eq = np.sqrt(vx_gse_eq ** 2 + vy_gse_eq ** 2 + vz_gse_eq ** 2)
+        vx_gse_3d, vy_gse_3d, vz_gse_3d = gsm_to_gse_vector(vx_3d, vy_3d, vz_3d, c_ang, s_ang)
+        vmag_3d = np.sqrt(vx_gse_3d ** 2 + vy_gse_3d ** 2 + vz_gse_3d ** 2)
 
         # Mask magnetosphere (flg == 0) and any unphysical extrapolation spikes
-        inv_eq = (flg_eq == 1) & ((vmag_eq > v_cap) | (den_eq < n_min_msh) | (tk_eq > 8.0e6))
-        mask_eq = (flg_eq == 0) | inv_eq
-        flg_eq_clean = np.where(inv_eq, -1, flg_eq)
+        inv_3d = (flg_3d == 1) & ((vmag_3d > v_cap) | (den_3d < n_min_msh) | (tk_3d > 8.0e6))
+        mask_3d = (flg_3d == 0) | inv_3d
+        flg_3d_clean = np.where(inv_3d, -1, flg_3d)
 
-        out["eq_np"][it] = np.where(mask_eq, np.nan, den_eq).reshape((nx, ny))
-        out["eq_temp_k"][it] = np.where(mask_eq, np.nan, tk_eq).reshape((nx, ny))
-        out["eq_vx_gse"][it] = np.where(mask_eq, np.nan, vx_gse_eq).reshape((nx, ny))
-        out["eq_vy_gse"][it] = np.where(mask_eq, np.nan, vy_gse_eq).reshape((nx, ny))
-        out["eq_vz_gse"][it] = np.where(mask_eq, np.nan, vz_gse_eq).reshape((nx, ny))
-        out["eq_vmag"][it] = np.where(mask_eq, np.nan, vmag_eq).reshape((nx, ny))
-        out["eq_rbs"][it] = rbs_eq.reshape((nx, ny))
-        out["eq_rmp"][it] = rmp_eq.reshape((nx, ny))
-        out["eq_flag"][it] = flg_eq_clean.reshape((nx, ny))
+        flg_3d_grid = flg_3d_clean.reshape(shape_3d)
+        mask_3d_grid = mask_3d.reshape(shape_3d)
+        rbs_3d_grid = rbs_3d.reshape(shape_3d)
+        rmp_3d_grid = rmp_3d.reshape(shape_3d)
 
-        # --- (B) Meridional Plane (Y_GSE = 0, skipping X_GSE < 0) ---
-        xg_m, yg_m, zg_m = gse_to_gsm_coords(mer_x_flat, mer_y_flat, mer_z_flat, c_ang, s_ang)
-        lib.msh_eval_batch(
-            n_mer_eval,
-            xg_m.ctypes.data_as(p_f64),
-            yg_m.ctypes.data_as(p_f64),
-            zg_m.ctypes.data_as(p_f64),
-            vsw, dsw, wsw, bx, by, bz, psid,
-            den_mer.ctypes.data_as(p_f64),
-            tk_mer.ctypes.data_as(p_f64),
-            vx_mer.ctypes.data_as(p_f64),
-            vy_mer.ctypes.data_as(p_f64),
-            vz_mer.ctypes.data_as(p_f64),
-            rbs_mer.ctypes.data_as(p_f64),
-            rmp_mer.ctypes.data_as(p_f64),
-            flg_mer.ctypes.data_as(p_i32),
-        )
-        vx_gse_m, vy_gse_m, vz_gse_m = gsm_to_gse_vector(vx_mer, vy_mer, vz_mer, c_ang, s_ang)
-        vmag_m = np.sqrt(vx_gse_m ** 2 + vy_gse_m ** 2 + vz_gse_m ** 2)
+        vars_3d_map = {
+            "np": den_3d.reshape(shape_3d),
+            "temp_k": tk_3d.reshape(shape_3d),
+            "vx_gse": vx_gse_3d.reshape(shape_3d),
+            "vy_gse": vy_gse_3d.reshape(shape_3d),
+            "vz_gse": vz_gse_3d.reshape(shape_3d),
+            "vmag": vmag_3d.reshape(shape_3d),
+        }
 
-        inv_m = (flg_mer == 1) & ((vmag_m > v_cap) | (den_mer < n_min_msh) | (tk_mer > 8.0e6))
-        mask_m = (flg_mer == 0) | inv_m
-        flg_m_clean = np.where(inv_m, -1, flg_mer)
+        # Update 3D streaming accumulators
+        all_finite = np.isfinite(vars_3d_map["np"]) & np.isfinite(vars_3d_map["temp_k"]) & np.isfinite(vars_3d_map["vmag"])
+        valid_3d = (flg_3d_grid > 0) & all_finite
+        msh_3d = (flg_3d_grid == 1) & all_finite
+        finite_bndry = np.isfinite(rbs_3d_grid) & np.isfinite(rmp_3d_grid) & (rbs_3d_grid > 0.0) & (rmp_3d_grid > 0.0)
 
-        out["mer_np"][it, ix_start:, :] = np.where(mask_m, np.nan, den_mer).reshape((nx_mer_eval, nz))
-        out["mer_temp_k"][it, ix_start:, :] = np.where(mask_m, np.nan, tk_mer).reshape((nx_mer_eval, nz))
-        out["mer_vx_gse"][it, ix_start:, :] = np.where(mask_m, np.nan, vx_gse_m).reshape((nx_mer_eval, nz))
-        out["mer_vy_gse"][it, ix_start:, :] = np.where(mask_m, np.nan, vy_gse_m).reshape((nx_mer_eval, nz))
-        out["mer_vz_gse"][it, ix_start:, :] = np.where(mask_m, np.nan, vz_gse_m).reshape((nx_mer_eval, nz))
-        out["mer_vmag"][it, ix_start:, :] = np.where(mask_m, np.nan, vmag_m).reshape((nx_mer_eval, nz))
-        out["mer_rbs"][it, ix_start:, :] = rbs_mer.reshape((nx_mer_eval, nz))
-        out["mer_rmp"][it, ix_start:, :] = rmp_mer.reshape((nx_mer_eval, nz))
-        out["mer_flag"][it, ix_start:, :] = flg_m_clean.reshape((nx_mer_eval, nz))
+        out["vol_valid_count"] += valid_3d
+        out["vol_msh_count"] += msh_3d
+        out["vol_bndry_count"] += finite_bndry
+        out["vol_rbs_sum"] += np.where(finite_bndry, rbs_3d_grid, 0.0)
+        out["vol_rmp_sum"] += np.where(finite_bndry, rmp_3d_grid, 0.0)
+
+        for vname, vgrid in vars_3d_map.items():
+            c_all = np.where(valid_3d, vgrid, 0.0)
+            out[f"vol_{vname}_sum"] += c_all
+            out[f"vol_{vname}_sum_sq"] += c_all * c_all
+            c_msh = np.where(msh_3d, vgrid, 0.0)
+            out[f"vol_{vname}_msh_sum"] += c_msh
+            out[f"vol_{vname}_msh_sum_sq"] += c_msh * c_msh
+
+        # --- Extract 2D Slices (zero extra Fortran calls) ---
+        # (A) Equatorial Plane (Z_GSE = 0)
+        mask_eq_slice = mask_3d_grid[:, :, iz0]
+        out["eq_flag"][it] = flg_3d_grid[:, :, iz0]
+        out["eq_rbs"][it] = rbs_3d_grid[:, :, iz0]
+        out["eq_rmp"][it] = rmp_3d_grid[:, :, iz0]
+        for vname, vgrid in vars_3d_map.items():
+            out[f"eq_{vname}"][it] = np.where(mask_eq_slice, np.nan, vgrid[:, :, iz0])
+
+        # (B) Meridional Plane (Y_GSE = 0, skipping X_GSE < 0 when configured)
+        if ix_start < nx:
+            mask_mer_slice = mask_3d_grid[ix_start:, iy0, :]
+            out["mer_flag"][it, ix_start:, :] = flg_3d_grid[ix_start:, iy0, :]
+            out["mer_rbs"][it, ix_start:, :] = rbs_3d_grid[ix_start:, iy0, :]
+            out["mer_rmp"][it, ix_start:, :] = rmp_3d_grid[ix_start:, iy0, :]
+            for vname, vgrid in vars_3d_map.items():
+                out[f"mer_{vname}"][it, ix_start:, :] = np.where(mask_mer_slice, np.nan, vgrid[ix_start:, iy0, :])
 
     return out
 
@@ -255,10 +264,9 @@ def evaluate_time_chunk(
 def compute_monthly_statistics(chunk_res: Dict[str, Any]) -> Dict[str, np.ndarray]:
     """
     Compute monthly cell-level summary statistics (Mean, Median, Std, Valid Count, MSH Count)
-    across the time axis (axis=0) for both Equatorial and Meridional planes.
+    for both 2D slices (Equatorial & Meridional) and finalize 3D volume streaming statistics.
     """
-    stats = {}
-    var_prefixes = ["np", "temp_k", "vx_gse", "vy_gse", "vz_gse", "vmag"]
+    stats: Dict[str, np.ndarray] = {}
 
     import warnings
     for plane in ["eq", "mer"]:
@@ -266,12 +274,54 @@ def compute_monthly_statistics(chunk_res: Dict[str, Any]) -> Dict[str, np.ndarra
         stats[f"{plane}_valid_count"] = np.sum(flg > 0, axis=0).astype(np.int32)
         stats[f"{plane}_msh_count"] = np.sum(flg == 1, axis=0).astype(np.int32)
 
-        for v in var_prefixes:
+        for v in VAR_PREFIXES:
             arr = chunk_res[f"{plane}_{v}"]
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 stats[f"{plane}_{v}_mean"] = np.nanmean(arr, axis=0).astype(np.float32)
                 stats[f"{plane}_{v}_median"] = np.nanmedian(arr, axis=0).astype(np.float32)
                 stats[f"{plane}_{v}_std"] = np.nanstd(arr, axis=0).astype(np.float32)
+
+    if "vol_valid_count" in chunk_res:
+        vol_vc = chunk_res["vol_valid_count"].astype(np.int32)
+        vol_mc = chunk_res["vol_msh_count"].astype(np.int32)
+        vol_bc = chunk_res["vol_bndry_count"]
+
+        stats["vol_valid_count"] = vol_vc
+        stats["vol_msh_count"] = vol_mc
+
+        denom_vc = np.maximum(vol_vc, 1).astype(np.float64)
+        denom_mc = np.maximum(vol_mc, 1).astype(np.float64)
+        denom_bc = np.maximum(vol_bc, 1).astype(np.float64)
+
+        stats["vol_msh_fraction"] = np.where(
+            vol_vc > 0, vol_mc.astype(np.float64) / denom_vc, np.nan
+        ).astype(np.float32)
+        stats["vol_rbs_mean"] = np.where(
+            vol_bc > 0, chunk_res["vol_rbs_sum"] / denom_bc, np.nan
+        ).astype(np.float32)
+        stats["vol_rmp_mean"] = np.where(
+            vol_bc > 0, chunk_res["vol_rmp_sum"] / denom_bc, np.nan
+        ).astype(np.float32)
+
+        inv_all = vol_vc == 0
+        inv_msh = vol_mc == 0
+
+        for v in VAR_PREFIXES:
+            mean_all = chunk_res[f"vol_{v}_sum"] / denom_vc
+            var_all = np.maximum(0.0, (chunk_res[f"vol_{v}_sum_sq"] / denom_vc) - mean_all * mean_all)
+            std_all = np.sqrt(var_all)
+            mean_all[inv_all] = np.nan
+            std_all[inv_all] = np.nan
+            stats[f"vol_{v}_mean"] = mean_all.astype(np.float32)
+            stats[f"vol_{v}_std"] = std_all.astype(np.float32)
+
+            mean_msh = chunk_res[f"vol_{v}_msh_sum"] / denom_mc
+            var_msh = np.maximum(0.0, (chunk_res[f"vol_{v}_msh_sum_sq"] / denom_mc) - mean_msh * mean_msh)
+            std_msh = np.sqrt(var_msh)
+            mean_msh[inv_msh] = np.nan
+            std_msh[inv_msh] = np.nan
+            stats[f"vol_{v}_msh_mean"] = mean_msh.astype(np.float32)
+            stats[f"vol_{v}_msh_std"] = std_msh.astype(np.float32)
 
     return stats
