@@ -177,6 +177,7 @@ def run_annual_pipeline(
     omni_file: Optional[str] = None,
     max_steps_per_month: Optional[int] = None,
     save_2d_timeseries: bool = False,
+    bg_msp_density: Optional[float] = 0.1,
 ) -> List[Dict[str, Any]]:
     """
     Execute the full 3D HPC pipeline for a given year (or selected months).
@@ -223,6 +224,7 @@ def run_annual_pipeline(
         zmin=zmin, zmax=zmax, dz=eff_dz,
         skip_meridional_nightside=True,
         save_2d_timeseries=save_2d_timeseries,
+        bg_msp_density=bg_msp_density,
     )
 
     # Step 3 & 4: Execute monthly chunks in parallel waves across the shared ProcessPool
@@ -359,7 +361,15 @@ def main():
         action="store_true",
         help="Also save 5-min 2D Equatorial/Meridional time-series arrays (increases file size to ~200 MB/month)",
     )
+    parser.add_argument(
+        "--bg-msp-np",
+        type=float,
+        default=0.1,
+        help="Background proton density [cm^-3] inside magnetopause (flg==0) (default: 0.1, set negative to disable)",
+    )
     args = parser.parse_args()
+
+    bg_msp = args.bg_msp_np if args.bg_msp_np >= 0.0 else None
 
     run_annual_pipeline(
         year=args.year,
@@ -380,6 +390,7 @@ def main():
         omni_file=args.omni_file,
         max_steps_per_month=args.max_steps,
         save_2d_timeseries=args.save_2d_timeseries,
+        bg_msp_density=bg_msp,
     )
 
 

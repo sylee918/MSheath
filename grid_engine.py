@@ -32,6 +32,7 @@ class GridConfig:
     dz: float = 1.0
     skip_meridional_nightside: bool = True
     save_2d_timeseries: bool = False
+    bg_msp_density: Optional[float] = 0.1
 
 
 _LIB_INSTANCE: Optional[ctypes.CDLL] = None
@@ -225,8 +226,23 @@ def evaluate_time_chunk(
 
         # Update 3D streaming accumulators
         all_finite = np.isfinite(vars_3d_map["np"]) & np.isfinite(vars_3d_map["temp_k"]) & np.isfinite(vars_3d_map["vmag"])
-        valid_3d = (flg_3d_grid > 0) & all_finite
         msh_3d = (flg_3d_grid == 1) & all_finite
+        if cfg.bg_msp_density is not None:
+            is_msp = (flg_3d_grid == 0)
+            valid_3d = ((flg_3d_grid > 0) & all_finite) | is_msp
+            msp_bg_vals = {
+                "np": float(cfg.bg_msp_density),
+                "temp_k": 1.0e5,
+                "vx_gse": 0.0,
+                "vy_gse": 0.0,
+                "vz_gse": 0.0,
+                "vmag": 0.0,
+            }
+        else:
+            is_msp = None
+            valid_3d = (flg_3d_grid > 0) & all_finite
+            msp_bg_vals = {}
+
         finite_bndry = np.isfinite(rbs_3d_grid) & np.isfinite(rmp_3d_grid) & (rbs_3d_grid > 0.0) & (rmp_3d_grid > 0.0)
 
         out["vol_valid_count"] += valid_3d
@@ -236,7 +252,8 @@ def evaluate_time_chunk(
         out["vol_rmp_sum"] += np.where(finite_bndry, rmp_3d_grid, 0.0)
 
         for vname, vgrid in vars_3d_map.items():
-            c_all = np.where(valid_3d, vgrid, 0.0)
+            v_src = np.where(is_msp, msp_bg_vals[vname], vgrid) if is_msp is not None else vgrid
+            c_all = np.where(valid_3d, v_src, 0.0)
             out[f"vol_{vname}_sum"] += c_all
             out[f"vol_{vname}_sum_sq"] += c_all * c_all
             c_msh = np.where(msh_3d, vgrid, 0.0)

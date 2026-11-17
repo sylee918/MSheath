@@ -174,8 +174,13 @@ def test_3_end_to_end_pipeline():
             "3D z=0 mean Np must match eq_np_mean!"
         )
         assert np.any(vol_mc > 0), "3D volume must contain magnetosheath points!"
+        ix0 = int(np.argmin(np.abs(x_gse - 0.0)))
+        iy0 = int(np.argmin(np.abs(y_gse - 0.0)))
+        assert np.isclose(vol_np_mean[ix0, iy0, iz0], 0.1, atol=1e-5), (
+            f"Magnetosphere background Np at (0,0,0) expected 0.1, got {vol_np_mean[ix0, iy0, iz0]}"
+        )
         print(f"  3D Volume verified {expected_shape}: max MSH count={np.max(vol_mc)}, "
-              f"peak MSH mean Np={np.nanmax(vol_np_msh_mean):.2f} cm^-3")
+              f"peak MSH mean Np={np.nanmax(vol_np_msh_mean):.2f} cm^-3, MSP bg Np={vol_np_mean[ix0, iy0, iz0]:.2f}")
 
     steps_per_sec = 288.0 / elapsed
     est_year_40core_min = (105120.0 / (steps_per_sec * (40.0 / 8.0))) / 60.0

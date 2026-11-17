@@ -19,7 +19,7 @@ module load pkgsrc python3
 cd "$PBS_O_WORKDIR"
 
 # Create output and data directories
-mkdir -p logs output_nc data/omni_5min
+mkdir -p logs output_nc summary_stats data/omni_5min
 
 # Prevent OpenBLAS / MKL / NumPy thread oversubscription across 40 multiprocessing workers
 export OMP_NUM_THREADS=1
@@ -42,40 +42,53 @@ fi
 TARGET_YEAR="${TARGET_YEAR:-2025}"
 TOTAL_CORES=40
 
-OMNI_LOCAL_PATH="data/omni_5min/omni_5min${TARGET_YEAR}.asc"
-if [ ! -f "${OMNI_LOCAL_PATH}" ]; then
-    echo "=================================================================="
-    echo "[ERROR] OMNI 5-min data file not found: ${OMNI_LOCAL_PATH}"
-    echo "Pleiades compute nodes cannot download files from external internet."
-    echo "Please download the data on the login node (pfe) first by running:"
-    echo "   bash download_omni.sh ${TARGET_YEAR}"
-    echo "=================================================================="
-    exit 1
-fi
+# Pre-flight check: verify all OMNI data files exist before starting compute
+for YR in ${TARGET_YEARS}; do
+    OMNI_LOCAL_PATH="data/omni_5min/omni_5min${YR}.asc"
+    if [ ! -f "${OMNI_LOCAL_PATH}" ]; then
+        echo "=================================================================="
+        echo "[ERROR] OMNI 5-min data file not found: ${OMNI_LOCAL_PATH}"
+        echo "Pleiades compute nodes cannot download files from external internet."
+        echo "Please download the data on the login node (pfe) first by running:"
+        echo "   bash download_omni.sh ${YR}"
+        echo "=================================================================="
+        exit 1
+    fi
+done
 
 echo "=================================================================="
 echo "Job ID: ${PBS_JOBID}"
 echo "Running on Host: $(hostname)"
-echo "Target Year: ${TARGET_YEAR} | Total Cores: ${TOTAL_CORES}"
+echo "Target Years: ${TARGET_YEARS} | Total Cores: ${TOTAL_CORES}"
 echo "Start Time: $(date -u)"
 echo "=================================================================="
 
-# Step 3: Run 40-Core HPC GSE 3D Magnetosheath Pipeline
-# - 12 Monthly Chunks (YYYY-01 to YYYY-12)
-# - 4 Concurrent Months in parallel wave, 10 workers per month across 40 cores
-# - 3D Volume Grid: X=[-10, 20], Y=[-25, 25], Z=[-15, 15] Re at 1.0 Re resolution
-python3 hpc_pipeline.py \
-    --year "${TARGET_YEAR}" \
-    --total-cores "${TOTAL_CORES}" \
-    --workers-per-month 10 \
-    --concurrent-months 4 \
-    --dx 1.0 \
-    --xmin -10.0 --xmax 20.0 \
-    --ymin -25.0 --ymax 25.0 \
-    --zmin -15.0 --zmax 15.0 \
-    --out-dir "output_nc"
+# Step 3: Run 40-Core HPC GSE 3D Magnetosheath Pipeline + 3D Summary Builder sequentially
+for YR in ${TARGET_YEARS}; do
+    echo "------------------------------------------------------------------"
+    echo "[Year ${YR}] Starting 3D MSheath pipeline at $(date -u)"
+    echo "------------------------------------------------------------------"
+    python3 hpc_pipeline.py \
+        --year "${YR}" \
+        --total-cores "${TOTAL_CORES}" \
+        --workers-per-month 10 \
+        --concurrent-months 4 \
+        --dx 0.5 \
+        --xmin -10.0 --xmax 20.0 \
+        --ymin -25.0 --ymax 25.0 \
+        --zmin -15.0 --zmax 15.0 \
+        --out-dir "output_nc" || exit 1
+
+    echo "[Year ${YR}] Building 3D Annual/Monthly Summary NetCDF4..."
+    python3 build_summary_stats.py \
+        --in-dir "output_nc" \
+        --year "${YR}" \
+        --stats-only \
+        --out "summary_stats/MSH_GSE_${YR}_3D_Summary.nc" || exit 1
+done
 
 echo "=================================================================="
-echo "Completed Job for Year=${TARGET_YEAR} at $(date -u)"
-echo "Outputs generated in: ${PBS_O_WORKDIR}/output_nc"
+echo "Completed Job for Years=[${TARGET_YEARS}] at $(date -u)"
+echo "Monthly Outputs : ${PBS_O_WORKDIR}/output_nc"
+echo "3D Summaries    : ${PBS_O_WORKDIR}/summary_stats"
 echo "=================================================================="
